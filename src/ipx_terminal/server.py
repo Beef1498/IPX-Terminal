@@ -1,0 +1,299 @@
+"""Zero-dependency local HTTP server for the IPX Terminal 4-pane Launchpad Web UI and REST API."""
+
+from __future__ import annotations
+
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import mimetypes
+from pathlib import Path
+from typing import Any, Dict, Optional
+import urllib.parse
+
+from ipx_terminal.config import (
+    CATEGORY_LABELS,
+    DEFAULT_EXPORT_DIR,
+    DEFAULT_QUESTIONS,
+    FUNCTION_CODES,
+    SECTOR_COLORS,
+    VALID_CATEGORIES,
+    VALID_DIFFICULTIES,
+    VALID_SECTORS,
+    VALID_SOURCES,
+)
+from ipx_terminal.db import TerminalDB, normalize_ticker
+from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
+from ipx_terminal.ingest import ingest_gdelt, seed_demo_workspace
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def parse_command_bar(raw_command: str, db: TerminalDB) -> Dict[str, Any]:
+    """Parse Bloomberg-style `<TICKER> <FUNCTION> <GO>` or `<SECTOR> TOP` commands."""
+    tokens = [tok.strip().upper() for tok in raw_command.strip().split() if tok.strip()]
+    if tokens and tokens[-1] == "GO":
+        tokens = tokens[:-1]
+    if not tokens:
+        return {"action": "focus_function", "function": "TOP", "message": "Loaded TOP movers tape."}
+
+    if tokens[0] == "SEED":
+        stats = seed_demo_workspace(db, force=False)
+        return {"action": "refresh", "function": "TOP", "message": f"Workspace seed: {stats}"}
+
+    # Single token: could be a function, a sector, or a ticker
+    if len(tokens) == 1:
+        tok = tokens[0]
+        if tok in FUNCTION_CODES:
+            return {"action": "focus_function", "function": tok, "message": f"{tok}: {FUNCTION_CODES[tok]}"}
+        if tok in VALID_SECTORS or tok == "ALL":
+            return {"action": "filter_sector", "sector": tok, "function": "TOP", "message": f"Filtered sector -> {tok}"}
+        if db.get_entity(tok):
+            return {"action": "select_ticker", "ticker": tok, "function": "DES", "message": f"Loaded {tok} DES"}
+        return {"action": "error", "message": f"Unknown ticker, sector, or function: '{tok}'"}
+
+    first, second = tokens[0], tokens[1]
+    if first in VALID_SECTORS or first == "ALL":
+        func = second if second in FUNCTION_CODES else "TOP"
+        return {
+            "action": "filter_sector",
+            "sector": first,
+            "function": func,
+            "message": f"Sector {first} -> {func}",
+        }
+
+    if second in FUNCTION_CODES:
+        ent = db.get_entity(first)
+        if not ent:
+            return {"action": "error", "message": f"Ticker '{first}' not found in IP Graph."}
+        return {
+            "action": "select_ticker",
+            "ticker": first,
+            "function": second,
+            "message": f"{first} <{second}> GO — {FUNCTION_CODES[second]}",
+        }
+
+    return {"action": "error", "message": f"Could not parse command '{raw_command}'. Try 'NVDA.IP GP' or 'MUSIC TOP'."}
+
+
+def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
+    class IPXHandler(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            return
+
+        def _send_json(self, payload: Any, status: int = HTTPStatus.OK) -> None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_static(self, rel_path: str) -> None:
+            target = (STATIC_DIR / rel_path).resolve()
+            if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
+                self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+                return
+            mime, _ = mimetypes.guess_type(str(target))
+            data = target.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", mime or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _read_json_body(self) -> Dict[str, Any]:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            return json.loads(raw.decode("utf-8"))
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
+            qs = urllib.parse.parse_qs(parsed.query)
+
+            if path == "/" or path == "/index.html":
+                self._send_static("index.html")
+                return
+            if path.startswith("/static/"):
+                self._send_static(path[len("/static/"):])
+                return
+
+            try:
+                if path == "/api/bootstrap":
+                    sector = qs.get("sector", ["ALL"])[0]
+                    movers = db.get_top_movers(sector=None if sector == "ALL" else sector)
+                    self._send_json(
+                        {
+                            "config": {
+                                "sectors": list(VALID_SECTORS),
+                                "categories": list(VALID_CATEGORIES),
+                                "category_labels": CATEGORY_LABELS,
+                                "default_questions": DEFAULT_QUESTIONS,
+                                "difficulties": list(VALID_DIFFICULTIES),
+                                "sources": list(VALID_SOURCES),
+                                "function_codes": FUNCTION_CODES,
+                                "sector_colors": SECTOR_COLORS,
+                                "default_export_dir": str(DEFAULT_EXPORT_DIR),
+                            },
+                            "stats": db.get_dashboard_stats(),
+                            "movers": movers,
+                            "signals": db.list_signals(
+                                sector=None if sector == "ALL" else sector,
+                                limit=40,
+                            ),
+                            "predictions": db.list_predictions(limit=60),
+                            "entities": db.list_entities(),
+                        }
+                    )
+                    return
+
+                if path.startswith("/api/ticker/"):
+                    ticker = urllib.parse.unquote(path[len("/api/ticker/"):])
+                    norm = normalize_ticker(ticker)
+                    ent = db.get_entity(norm)
+                    if not ent:
+                        self._send_json({"error": f"Ticker '{norm}' not found"}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_json(
+                        {
+                            "entity": ent,
+                            "history": db.get_ticker_history(norm, limit=30),
+                            "predictions": db.list_predictions(ticker=norm, limit=30),
+                        }
+                    )
+                    return
+
+                self._send_json({"error": f"Unknown endpoint: {path}"}, status=HTTPStatus.NOT_FOUND)
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
+        def do_POST(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
+
+            try:
+                body = self._read_json_body()
+
+                if path == "/api/command":
+                    result = parse_command_bar(str(body.get("command", "")), db)
+                    self._send_json(result)
+                    return
+
+                if path == "/api/seed":
+                    stats = seed_demo_workspace(db, force=bool(body.get("force", False)))
+                    self._send_json({"ok": True, "seeded": stats})
+                    return
+
+                if path == "/api/signals":
+                    platforms = body.get("platforms", [])
+                    if isinstance(platforms, str):
+                        platforms = [p.strip() for p in platforms.split(",") if p.strip()]
+                    samples = body.get("samples", [])
+                    if isinstance(samples, str):
+                        samples = [s.strip() for s in samples.splitlines() if s.strip()]
+                    metrics = body.get("metrics") or {}
+                    if isinstance(metrics, str):
+                        metrics = json.loads(metrics) if metrics.strip() else {}
+                    sig = db.insert_signal(
+                        ticker=str(body["ticker"]),
+                        title=str(body["title"]),
+                        summary=str(body["summary"]),
+                        platforms=platforms,
+                        metrics=metrics,
+                        samples=samples,
+                        entities_mentioned=body.get("entities_mentioned"),
+                        source_type=str(body.get("source_type", "manual")),
+                        captured_at=body.get("captured_at") or None,
+                        url=str(body.get("url", "")),
+                        sector=str(body.get("sector", "POP")),
+                        entity_name=body.get("entity_name"),
+                        owner_holder=str(body.get("owner_holder", "Independent / Unknown")),
+                    )
+                    self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/ingest/gdelt":
+                    sig = ingest_gdelt(
+                        db=db,
+                        query=str(body["query"]),
+                        ticker=str(body["ticker"]),
+                        sector=str(body.get("sector", "POP")),
+                        entity_name=body.get("entity_name"),
+                        owner_holder=str(body.get("owner_holder", "Independent / Unknown")),
+                        max_records=int(body.get("max_records", 12)),
+                        timespan=str(body.get("timespan", "24h")),
+                    )
+                    self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/predictions":
+                    window_raw = body.get("outcome_window_hours", 48)
+                    window_val = None if window_raw in ("", None) else int(window_raw)
+                    pred = db.create_prediction(
+                        signal_id=int(body["signal_id"]),
+                        category=str(body["category"]),
+                        predicted_label=str(body["predicted_label"]),
+                        confidence=float(body.get("confidence", 0.75)),
+                        question=body.get("question") or None,
+                        title=body.get("title") or None,
+                        difficulty=str(body.get("difficulty", "medium")),
+                        source=str(body.get("source", "ipx_terminal_export")),
+                        outcome_window_hours=window_val,
+                        analyst_notes=str(body.get("analyst_notes", "")),
+                    )
+                    self._send_json({"ok": True, "prediction": pred}, status=HTTPStatus.CREATED)
+                    return
+
+                if path.startswith("/api/predictions/") and path.endswith("/resolve"):
+                    pred_id_str = path[len("/api/predictions/") : -len("/resolve")].strip("/")
+                    pred_id = int(pred_id_str)
+                    concepts = body.get("required_concepts")
+                    if isinstance(concepts, str):
+                        concepts = parse_concepts_text(concepts)
+                    window_raw = body.get("outcome_window_hours")
+                    window_val = None if window_raw in ("", None) else int(window_raw)
+                    outcome_metrics = body.get("outcome_metrics") or {}
+                    if isinstance(outcome_metrics, str):
+                        outcome_metrics = json.loads(outcome_metrics) if outcome_metrics.strip() else {}
+                    resolved = db.resolve_prediction(
+                        prediction_id=pred_id,
+                        ground_truth_label=str(body["ground_truth_label"]),
+                        secondary_label=body.get("secondary_label") or None,
+                        required_concepts=concepts or [],
+                        rationale=str(body["rationale"]),
+                        outcome_window_hours=window_val,
+                        outcome_metrics=outcome_metrics,
+                    )
+                    self._send_json({"ok": True, "prediction": resolved})
+                    return
+
+                if path == "/api/export":
+                    out_dir = Path(body["out_dir"]) if body.get("out_dir") else DEFAULT_EXPORT_DIR
+                    version = str(body.get("version", "0.4"))
+                    result = export_resolved_to_jsonl(db=db, out_dir=out_dir, version=version)
+                    self._send_json({"ok": True, **result})
+                    return
+
+                self._send_json({"error": f"Unknown endpoint: {path}"}, status=HTTPStatus.NOT_FOUND)
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
+    return IPXHandler
+
+
+def create_server(db: TerminalDB, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((host, port), make_handler(db))
+
+
+def run_server(db: TerminalDB, host: str = "127.0.0.1", port: int = 8765) -> None:
+    server = create_server(db, host=host, port=port)
+    print(f"IPX Terminal Launchpad running at http://{host}:{port}")
+    print(f"SQLite WAL database: {db.db_path}")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down IPX Terminal server.")
+    finally:
+        server.server_close()

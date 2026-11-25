@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPX TERMINAL // Content IP Intelligence Launchpad</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-badge">IPX</span>
+      <span class="brand-title">TERMINAL</span>
+      <span class="brand-ver">v0.1</span>
+    </div>
+
+    <form id="command-form" class="command-bar" autocomplete="off">
+      <span class="cmd-prompt">&gt;</span>
+      <input
+        id="command-input"
+        type="text"
+        placeholder="Type <TICKER> <FUNCTION> <GO>  (e.g. KATT.FMT GP, NVDA.IP DES, MUSIC TOP, LOG, EXPORT)"
+        aria-label="Command bar"
+      />
+      <button type="submit" class="btn-go">GO</button>
+    </form>
+
+    <div class="kpi-strip" id="kpi-strip">
+      <div class="kpi" title="Tracked Content IP entities (franchises, formats, catalogs, creators, deals) in the IP Graph."><span class="kpi-label">ENTITIES</span><span class="kpi-val" id="kpi-entities">0</span></div>
+      <div class="kpi" title="Time-stamped t₀ cross-platform signal snapshots captured before outcomes are known."><span class="kpi-label">SIGNALS</span><span class="kpi-val" id="kpi-signals">0</span></div>
+      <div class="kpi" title="Logged predictions waiting on their 48-72h real-world outcome window."><span class="kpi-label">PENDING 48-72H</span><span class="kpi-val amber" id="kpi-pending">0</span></div>
+      <div class="kpi" title="Verified ground-truth outcomes ready to export into IPX-Eval."><span class="kpi-label">RESOLVED</span><span class="kpi-val green" id="kpi-resolved">0</span></div>
+      <div class="kpi" title="Percentage of resolved predictions where the initial t₀ call matched the verified 48-72h outcome."><span class="kpi-label">HIT RATE</span><span class="kpi-val cyan" id="kpi-accuracy">--</span></div>
+    </div>
+  </header>
+
+  <nav class="sector-bar">
+    <div class="sector-keys" id="sector-keys"></div>
+    <div class="toolbar-actions">
+      <button type="button" class="btn-action" id="btn-open-capture">+ Capture t₀ Signal</button>
+      <button type="button" class="btn-action cyan" id="btn-open-gdelt">GDELT Sweep</button>
+      <button type="button" class="btn-action amber" id="btn-quick-export">Export → IPX-Eval</button>
+      <button type="button" class="btn-action help-btn" id="btn-open-help" title="Open Bloomberg-style operator's key & command guide (shortcut: ?)">? HELP</button>
+    </div>
+  </nav>
+
+  <div class="status-banner" id="status-banner">
+    <span class="status-dot"></span>
+    <span id="status-text">IPX Terminal ready. Press / for command bar or ? for HELP key.</span>
+  </div>
+
+  <main class="launchpad-grid">
+    <!-- PANE 1: TOP MOVERS -->
+    <section class="pane" id="pane-top">
+      <div class="pane-header">
+        <div class="pane-title" title="TOP: Ranked leaderboard of Content IP tickers by current Cultural Velocity Score (CVS)."><span class="fn-tag">TOP</span> CULTURAL VELOCITY MOVERS</div>
+        <span class="pane-meta" id="top-sector-label">SECTOR: ALL</span>
+      </div>
+      <div class="pane-body table-wrap">
+        <table class="tape-table">
+          <thead>
+            <tr>
+              <th title="Unique IP symbol (like a stock ticker, e.g. NVDA.IP or KATT.FMT). Click any row to load it.">TICKER</th>
+              <th title="Content IP asset class: POP, MUSIC, FILM_TV, GAMING, CREATORS, SPORTS, or DEALS.">SECTOR</th>
+              <th class="num" title="Cultural Velocity Score (0-100): time-decayed momentum combining breakout ratio, share/save intent, creator breadth, and cross-platform spread.">CVS</th>
+              <th class="num" title="Change in CVS vs. the previous captured snapshot for this ticker.">Δ</th>
+              <th class="num" title="Cross-Platform Contagion Index (0-100): measures whether a trend jumped out of one bubble into multiple platforms, search, or news.">CONTAGION</th>
+              <th title="Spread classification: echo_chamber (<38), emerging_contagion (38-67), or mainstream_breakout (68+).">STAGE</th>
+            </tr>
+          </thead>
+          <tbody id="movers-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PANE 2: GP VELOCITY & CONTAGION GRAPH -->
+    <section class="pane" id="pane-gp">
+      <div class="pane-header">
+        <div class="pane-title" title="GP (Graph Price): Plots CVS (cyan) and Contagion Index (amber) across time-stamped t₀ snapshots."><span class="fn-tag">GP</span> VELOCITY &amp; CONTAGION GRAPH</div>
+        <span class="pane-meta" id="gp-ticker-label">--</span>
+      </div>
+      <div class="pane-body gp-body">
+        <div class="chart-wrap" id="gp-chart-wrap"></div>
+        <div class="gp-latest" id="gp-latest-card"></div>
+      </div>
+    </section>
+
+    <!-- PANE 3: WIRE SIGNAL TAPE -->
+    <section class="pane" id="pane-wire">
+      <div class="pane-header">
+        <div class="pane-title" title="WIRE: Live chronological feed of captured t₀ signals across social, search, and GDELT news."><span class="fn-tag">WIRE</span> LIVE t₀ SIGNAL TAPE</div>
+        <span class="pane-meta" id="wire-count-label">0 SIGNALS</span>
+      </div>
+      <div class="pane-body wire-list" id="wire-list"></div>
+    </section>
+
+    <!-- PANE 4: DES / LOG / EXPORT -->
+    <section class="pane" id="pane-desk">
+      <div class="pane-header">
+        <div class="pane-tabs">
+          <button type="button" class="tab-btn active" data-tab="DES">DES</button>
+          <button type="button" class="tab-btn" data-tab="LOG">LOG / 48-72H</button>
+          <button type="button" class="tab-btn" data-tab="EXPORT">IPX-EVAL EXPORT</button>
+        </div>
+        <span class="pane-meta" id="desk-meta">ENTITY &amp; EVAL DESK</span>
+      </div>
+      <div class="pane-body" id="desk-body"></div>
+    </section>
+  </main>
+
+  <!-- MODAL: CAPTURE / GDELT / LOG / RESOLVE -->
+  <div class="modal-backdrop hidden" id="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">ACTION</span>
+        <button type="button" class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

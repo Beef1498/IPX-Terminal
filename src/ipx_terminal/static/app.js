@@ -1,0 +1,746 @@
+/* IPX Terminal v0.1 — 4-Pane Bloomberg Launchpad Client */
+
+const state = {
+  config: null,
+  stats: null,
+  sector: "ALL",
+  movers: [],
+  signals: [],
+  predictions: [],
+  entities: [],
+  activeTicker: null,
+  tickerDetail: null,
+  activeTab: "DES",
+  lastExport: null,
+};
+
+function esc(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function setStatus(msg, isError = false) {
+  const el = document.getElementById("status-text");
+  el.textContent = msg;
+  el.style.color = isError ? "#fb7185" : "#8b9bb0";
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function loadBootstrap(preserveTicker = true) {
+  const data = await api(`/api/bootstrap?sector=${encodeURIComponent(state.sector)}`);
+  state.config = data.config;
+  state.stats = data.stats;
+  state.movers = data.movers;
+  state.signals = data.signals;
+  state.predictions = data.predictions;
+  state.entities = data.entities;
+
+  renderKpis();
+  renderSectorKeys();
+  renderMovers();
+  renderWire();
+
+  const candidate =
+    preserveTicker && state.activeTicker && state.entities.some((e) => e.ticker === state.activeTicker)
+      ? state.activeTicker
+      : state.movers[0]?.ticker || state.entities[0]?.ticker || null;
+
+  if (candidate) {
+    await selectTicker(candidate, false);
+  } else {
+    renderGP();
+    renderDesk();
+  }
+}
+
+async function selectTicker(ticker, announce = true) {
+  state.activeTicker = ticker;
+  state.tickerDetail = await api(`/api/ticker/${encodeURIComponent(ticker)}`);
+  renderMovers();
+  renderGP();
+  renderDesk();
+  if (announce) setStatus(`Loaded ${ticker} — ${state.tickerDetail.entity.name}`);
+}
+
+function renderKpis() {
+  const s = state.stats || {};
+  document.getElementById("kpi-entities").textContent = s.entities ?? 0;
+  document.getElementById("kpi-signals").textContent = s.signals ?? 0;
+  document.getElementById("kpi-pending").textContent = s.pending_predictions ?? 0;
+  document.getElementById("kpi-resolved").textContent = s.resolved_predictions ?? 0;
+  document.getElementById("kpi-accuracy").textContent =
+    s.prediction_accuracy_pct != null ? `${s.prediction_accuracy_pct}%` : "--";
+}
+
+function renderSectorKeys() {
+  const container = document.getElementById("sector-keys");
+  const sectors = ["ALL", ...(state.config?.sectors || [])];
+  const colors = state.config?.sector_colors || {};
+  container.innerHTML = sectors
+    .map((sec) => {
+      const active = state.sector === sec ? "active" : "";
+      const dot = sec !== "ALL" && colors[sec] ? `<span style="color:${colors[sec]}">●</span> ` : "";
+      return `<button type="button" class="sector-key ${active}" data-sector="${sec}">${dot}${sec}</button>`;
+    })
+    .join("");
+  container.querySelectorAll(".sector-key").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      state.sector = btn.dataset.sector;
+      document.getElementById("top-sector-label").textContent = `SECTOR: ${state.sector}`;
+      await loadBootstrap(true);
+      setStatus(`Filtered Launchpad to sector ${state.sector}`);
+    });
+  });
+}
+
+function renderMovers() {
+  const tbody = document.getElementById("movers-tbody");
+  const colors = state.config?.sector_colors || {};
+  if (!state.movers.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#8b9bb0;padding:16px">No IP entities found. Run <code>SEED</code> in the command bar or click <b>+ Capture t₀ Signal</b>.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = state.movers
+    .map((m) => {
+      const sel = m.ticker === state.activeTicker ? "selected" : "";
+      const deltaCls = m.cvs_delta > 0 ? "delta-pos" : m.cvs_delta < 0 ? "delta-neg" : "delta-flat";
+      const deltaTxt = m.cvs_delta > 0 ? `+${m.cvs_delta.toFixed(1)}` : m.cvs_delta.toFixed(1);
+      const secColor = colors[m.sector] || "#94a3b8";
+      return `
+        <tr class="${sel}" data-ticker="${esc(m.ticker)}">
+          <td class="ticker-cell">${esc(m.ticker)}</td>
+          <td><span class="pill" style="color:${secColor};border-color:${secColor}44;background:${secColor}18">${esc(m.sector)}</span></td>
+          <td class="num"><b>${Number(m.cvs_score).toFixed(1)}</b></td>
+          <td class="num ${deltaCls}">${deltaTxt}</td>
+          <td class="num">${Number(m.contagion_index).toFixed(1)}</td>
+          <td><span class="pill stage-${esc(m.contagion_stage)}">${esc(m.contagion_stage)}</span></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  tbody.querySelectorAll("tr[data-ticker]").forEach((row) => {
+    row.addEventListener("click", () => selectTicker(row.dataset.ticker));
+  });
+}
+
+function renderGP() {
+  const labelEl = document.getElementById("gp-ticker-label");
+  const chartWrap = document.getElementById("gp-chart-wrap");
+  const latestCard = document.getElementById("gp-latest-card");
+
+  if (!state.tickerDetail) {
+    labelEl.textContent = "--";
+    chartWrap.innerHTML = `<div style="color:#8b9bb0;padding:16px">Select a ticker in TOP to inspect its CVS &amp; Contagion trajectory.</div>`;
+    latestCard.innerHTML = "";
+    return;
+  }
+
+  const { entity, history } = state.tickerDetail;
+  labelEl.textContent = `${entity.ticker} // ${entity.name}`;
+
+  if (!history.length) {
+    chartWrap.innerHTML = `<div style="color:#8b9bb0;padding:16px">No signal snapshots yet for ${esc(entity.ticker)}.</div>`;
+    latestCard.innerHTML = "";
+    return;
+  }
+
+  // Build crisp responsive SVG chart
+  const W = 520, H = 140, padL = 36, padR = 26, padT = 14, padB = 24;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const n = history.length;
+
+  const xAt = (i) => (n === 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW);
+  const yAt = (v) => padT + innerH - (Math.max(0, Math.min(100, v)) / 100) * innerH;
+
+  const cvsPts = history.map((h, i) => `${xAt(i).toFixed(1)},${yAt(h.cvs_score).toFixed(1)}`).join(" ");
+  const cntPts = history.map((h, i) => `${xAt(i).toFixed(1)},${yAt(h.contagion_index).toFixed(1)}`).join(" ");
+  const areaPts = `${xAt(0).toFixed(1)},${(padT + innerH).toFixed(1)} ${cvsPts} ${xAt(n - 1).toFixed(1)},${(padT + innerH).toFixed(1)}`;
+
+  const gridLines = [0, 25, 50, 75, 100]
+    .map((val) => {
+      const y = yAt(val).toFixed(1);
+      return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#1c2635" stroke-width="1"/>
+              <text x="${padL - 6}" y="${Number(y) + 3}" fill="#64748b" font-size="9" font-family="monospace" text-anchor="end">${val}</text>`;
+    })
+    .join("");
+
+  const dots = history
+    .map((h, i) => {
+      const x = xAt(i).toFixed(1);
+      const yCvs = yAt(h.cvs_score).toFixed(1);
+      const yCnt = yAt(h.contagion_index).toFixed(1);
+      const shortTime = (h.captured_at || "").slice(5, 16).replace("T", " ");
+      const anchor = n === 1 ? "middle" : i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+      return `
+        <circle cx="${x}" cy="${yCvs}" r="3.5" fill="#22d3ee"><title>CVS ${h.cvs_score} (${shortTime})</title></circle>
+        <circle cx="${x}" cy="${yCnt}" r="3" fill="#f59e0b"><title>Contagion ${h.contagion_index} (${shortTime})</title></circle>
+        <text x="${x}" y="${H - 6}" fill="#64748b" font-size="8.5" font-family="monospace" text-anchor="${anchor}">${esc(shortTime)}</text>
+      `;
+    })
+    .join("");
+
+  chartWrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-family:monospace;font-size:10px;color:#8b9bb0;margin-bottom:4px">
+      <span><span style="color:#22d3ee">━</span> CVS (Cultural Velocity) &nbsp; <span style="color:#f59e0b">━</span> Contagion Index</span>
+      <span>${history.length} t₀ snapshot(s)</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="140" preserveAspectRatio="none">
+      ${gridLines}
+      <polygon points="${areaPts}" fill="rgba(34,211,238,0.12)" />
+      <polyline fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 2" points="${cntPts}" />
+      <polyline fill="none" stroke="#22d3ee" stroke-width="2.2" points="${cvsPts}" />
+      ${dots}
+    </svg>
+  `;
+
+  const latest = history[history.length - 1];
+  const metricsChips = Object.entries(latest.metrics || {})
+    .slice(0, 8)
+    .map(([k, v]) => `<span class="metric-chip">${esc(k)}: ${esc(v)}</span>`)
+    .join("");
+
+  latestCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <b style="color:#f59e0b">LATEST t₀ SNAPSHOT (#${latest.id})</b>
+      <button type="button" class="btn-action amber" id="btn-gp-log">+ Log Prediction</button>
+    </div>
+    <div style="font-weight:600;margin-bottom:4px">${esc(latest.title)}</div>
+    <div style="color:#94a3b8">${esc(latest.summary)}</div>
+    <div class="metric-chips">${metricsChips || '<span class="metric-chip">no metrics</span>'}</div>
+  `;
+
+  document.getElementById("btn-gp-log").addEventListener("click", () => openLogPredictionModal(latest));
+}
+
+function renderWire() {
+  const list = document.getElementById("wire-list");
+  document.getElementById("wire-count-label").textContent = `${state.signals.length} SIGNALS`;
+  if (!state.signals.length) {
+    list.innerHTML = `<div style="color:#8b9bb0">No signals captured yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = state.signals
+    .map((s) => {
+      const ts = (s.captured_at || "").replace("T", " ").replace("Z", " UTC");
+      return `
+        <div class="wire-card">
+          <div class="wire-top">
+            <span><b style="color:#f59e0b;cursor:pointer" data-jump-ticker="${esc(s.ticker)}">${esc(s.ticker)}</b> · ${esc(s.platforms.join(", "))}</span>
+            <span style="color:#64748b">${esc(ts)}</span>
+          </div>
+          <div class="wire-title">${esc(s.title)}</div>
+          <div class="wire-summary">${esc(s.summary)}</div>
+          <div class="wire-footer">
+            <span>CVS <b style="color:#22d3ee">${s.cvs_score}</b> · CONTAGION <b>${s.contagion_index}</b> <span class="pill stage-${esc(s.contagion_stage)}">${esc(s.contagion_stage)}</span></span>
+            <button type="button" class="btn-action" data-log-signal="${s.id}">Log Prediction</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  list.querySelectorAll("[data-jump-ticker]").forEach((el) => {
+    el.addEventListener("click", () => selectTicker(el.dataset.jumpTicker));
+  });
+  list.querySelectorAll("[data-log-signal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sig = state.signals.find((x) => x.id === Number(btn.dataset.logSignal));
+      if (sig) openLogPredictionModal(sig);
+    });
+  });
+}
+
+function renderDesk() {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === state.activeTab);
+  });
+  const body = document.getElementById("desk-body");
+
+  if (state.activeTab === "DES") {
+    if (!state.tickerDetail) {
+      body.innerHTML = `<div style="color:#8b9bb0">Select a ticker to inspect its Entity-Resolution IP Graph profile.</div>`;
+      return;
+    }
+    const { entity, predictions } = state.tickerDetail;
+    body.innerHTML = `
+      <div class="des-grid">
+        <div class="des-kv"><div class="des-k">TICKER / SECTOR</div><div class="des-v" style="color:#f59e0b">${esc(entity.ticker)} · ${esc(entity.sector)}</div></div>
+        <div class="des-kv"><div class="des-k">RIGHTS HOLDER / OWNER</div><div class="des-v">${esc(entity.owner_holder)}</div></div>
+        <div class="des-kv"><div class="des-k">IP ASSET TYPE</div><div class="des-v">${esc(entity.ip_type)}</div></div>
+        <div class="des-kv"><div class="des-k">ALIASES</div><div class="des-v">${esc((entity.aliases || []).join(", ") || "None")}</div></div>
+      </div>
+      <div class="des-kv" style="margin-bottom:10px">
+        <div class="des-k">IP PROFILE</div>
+        <div style="color:#cbd5e1;line-height:1.45">${esc(entity.description || "No description yet.")}</div>
+      </div>
+      <div style="font-family:monospace;font-size:11px;color:#8b9bb0;margin-bottom:6px">LINKED PREDICTIONS (${predictions.length})</div>
+      ${predictions.length ? predictions.map(renderPredictionCardHtml).join("") : `<div style="color:#64748b">No predictions logged for ${esc(entity.ticker)} yet.</div>`}
+    `;
+    wireResolveButtons(body);
+    return;
+  }
+
+  if (state.activeTab === "LOG") {
+    if (!state.predictions.length) {
+      body.innerHTML = `<div style="color:#8b9bb0">No predictions logged yet. Click <b>Log Prediction</b> on any signal in WIRE.</div>`;
+      return;
+    }
+    body.innerHTML = state.predictions.map(renderPredictionCardHtml).join("");
+    wireResolveButtons(body);
+    return;
+  }
+
+  if (state.activeTab === "EXPORT") {
+    const defaultDir = state.config?.default_export_dir || "exports/ipx-eval";
+    const resolvedCount = state.stats?.resolved_predictions ?? 0;
+    const preview = state.lastExport?.preview_jsonl || "Click 'Export Resolved Cases' to generate schema-validated IPX-Eval JSONL.";
+    const filesHtml = (state.lastExport?.files || [])
+      .map((f) => `<div style="font-family:monospace;font-size:11px;color:#34d399">✓ ${esc(f.category)}.jsonl (${f.count} cases) → ${esc(f.path)}</div>`)
+      .join("");
+
+    body.innerHTML = `
+      <div class="export-box">
+        <div style="color:#cbd5e1;line-height:1.45">
+          Exports all <b>${resolvedCount}</b> resolved predictions using their immutable <b>t₀</b> <code>signal_snapshot</code> (zero future leakage) validated against <code>eval_case.schema.json</code>.
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label>EXPORT DIRECTORY</label>
+            <input id="export-dir-input" value="${esc(state.lastExport?.out_dir || defaultDir)}" />
+          </div>
+          <div class="form-row">
+            <label>DATASET VERSION</label>
+            <input id="export-ver-input" value="${esc(state.lastExport?.version || "0.4")}" />
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn-action amber" id="btn-run-export">Export Resolved Cases to JSONL</button>
+          <button type="button" class="btn-action cyan" id="btn-set-ipxeval-path">Target IPX-Eval/datasets/v0.4-terminal</button>
+        </div>
+        ${filesHtml}
+        <div class="code-preview">${esc(preview)}</div>
+      </div>
+    `;
+
+    document.getElementById("btn-set-ipxeval-path").addEventListener("click", () => {
+      document.getElementById("export-dir-input").value = "/Users/vieth/Documents/IPX/IPX-Eval/datasets/v0.4-terminal";
+    });
+    document.getElementById("btn-run-export").addEventListener("click", async () => {
+      try {
+        const out_dir = document.getElementById("export-dir-input").value.trim();
+        const version = document.getElementById("export-ver-input").value.trim() || "0.4";
+        state.lastExport = await api("/api/export", {
+          method: "POST",
+          body: JSON.stringify({ out_dir, version }),
+        });
+        setStatus(`Exported ${state.lastExport.total_exported} schema-valid IPX-Eval cases -> ${state.lastExport.out_dir}`);
+        renderDesk();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
+  }
+}
+
+function renderPredictionCardHtml(p) {
+  const isRes = p.status === "resolved";
+  const badgeCls = isRes ? "badge-resolved" : "badge-pending";
+  const statusTxt = isRes ? `RESOLVED (${p.outcome.prediction_correct ? "HIT" : "MISS"})` : p.overdue ? "PENDING · DUE NOW" : "PENDING";
+  const gtLine = isRes
+    ? `<div style="color:#34d399;font-family:monospace;font-size:11px;margin-top:4px">GT: <b>${esc(p.outcome.label)}</b> · ${esc(p.outcome.rationale)}</div>`
+    : `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+         <span style="font-family:monospace;font-size:10.5px;color:#8b9bb0">Window: ${p.outcome_window_hours ?? "N/A"}h · Due: ${esc((p.due_at || "N/A").slice(0, 16).replace("T", " "))}</span>
+         <button type="button" class="btn-action green" data-resolve-pred="${p.id}">Resolve 48-72h Outcome</button>
+       </div>`;
+  return `
+    <div class="pred-card">
+      <div class="pred-head">
+        <span><b style="color:#22d3ee">${esc(p.case_code)}</b> · <b style="color:#f59e0b">${esc(p.ticker)}</b> · ${esc(p.category)}</span>
+        <span class="pill ${badgeCls}">${statusTxt}</span>
+      </div>
+      <div style="font-weight:600;margin-bottom:3px">${esc(p.title)}</div>
+      <div style="font-family:monospace;font-size:11px;color:#94a3b8">Pred: <b>${esc(p.predicted_label)}</b> (${Math.round(p.confidence * 100)}%)</div>
+      ${gtLine}
+    </div>
+  `;
+}
+
+function wireResolveButtons(container) {
+  container.querySelectorAll("[data-resolve-pred]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pred = state.predictions.find((x) => x.id === Number(btn.dataset.resolvePred));
+      if (pred) openResolveModal(pred);
+    });
+  });
+}
+
+/* ---------------- Modals ---------------- */
+function openModal(title, html) {
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-body").innerHTML = html;
+  document.getElementById("modal-backdrop").classList.remove("hidden");
+}
+function closeModal() {
+  document.getElementById("modal-backdrop").classList.add("hidden");
+}
+
+function openCaptureSignalModal() {
+  const sectors = (state.config?.sectors || []).map((s) => `<option value="${s}">${s}</option>`).join("");
+  openModal(
+    "CAPTURE t₀ SIGNAL SNAPSHOT",
+    `
+    <form id="form-capture">
+      <div class="form-grid">
+        <div class="form-row"><label>TICKER</label><input name="ticker" placeholder="e.g. NVDA.IP or KATT.FMT" required /></div>
+        <div class="form-row"><label>SECTOR</label><select name="sector">${sectors}</select></div>
+        <div class="form-row"><label>ENTITY NAME (IF NEW)</label><input name="entity_name" placeholder="e.g. Solo Leveling" /></div>
+        <div class="form-row"><label>RIGHTS HOLDER</label><input name="owner_holder" placeholder="e.g. Sony / Crunchyroll" /></div>
+        <div class="form-row full"><label>SIGNAL TITLE</label><input name="title" placeholder="Short headline of what spiked at t₀" required /></div>
+        <div class="form-row full"><label>PLATFORMS (COMMA-SEPARATED)</label><input name="platforms" placeholder="TikTok, X, YouTube Shorts" required /></div>
+        <div class="form-row full"><label>t₀ SUMMARY (NO FUTURE LEAKAGE)</label><textarea name="summary" required placeholder="Exact observations available at t₀..."></textarea></div>
+        <div class="form-row full"><label>METRICS JSON</label><input name="metrics" value='{"views": 120000, "likes": 8500, "shares": 2400}' /></div>
+        <div class="form-row full"><label>VERBATIM SAMPLES (ONE PER LINE)</label><textarea name="samples" placeholder="'Wait what song is this??'"></textarea></div>
+        <div class="form-row full"><label>SOURCE URL (OPTIONAL)</label><input name="url" placeholder="https://..." /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action amber">Save t₀ Signal</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-capture").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const res = await api("/api/signals", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(fd.entries())),
+      });
+      closeModal();
+      state.activeTicker = res.signal.ticker;
+      await loadBootstrap(true);
+      setStatus(`Captured signal #${res.signal.id} for ${res.signal.ticker} (CVS=${res.signal.cvs_score})`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+function openGdeltModal() {
+  const sectors = (state.config?.sectors || []).map((s) => `<option value="${s}">${s}</option>`).join("");
+  openModal(
+    "LIVE GDELT DOC 2.0 NEWS SWEEP",
+    `
+    <form id="form-gdelt">
+      <div class="form-grid">
+        <div class="form-row"><label>TICKER</label><input name="ticker" value="${esc(state.activeTicker || "NVDA.IP")}" required /></div>
+        <div class="form-row"><label>SECTOR</label><select name="sector">${sectors}</select></div>
+        <div class="form-row full"><label>GDELT QUERY</label><input name="query" placeholder='e.g. "Jensen Huang" OR "GTA 6"' required /></div>
+        <div class="form-row"><label>TIMESPAN</label><input name="timespan" value="24h" /></div>
+        <div class="form-row"><label>MAX ARTICLES</label><input name="max_records" type="number" value="12" /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action cyan">Run Live GDELT Sweep</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-gdelt").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    setStatus("Running live GDELT DOC 2.0 sweep...");
+    try {
+      const res = await api("/api/ingest/gdelt", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(fd.entries())),
+      });
+      closeModal();
+      state.activeTicker = res.signal.ticker;
+      await loadBootstrap(true);
+      setStatus(`GDELT sweep ingested signal #${res.signal.id} -> ${res.signal.title}`);
+    } catch (err) {
+      setStatus(`GDELT error: ${err.message}`, true);
+    }
+  });
+}
+
+function openLogPredictionModal(signal) {
+  const categories = state.config?.categories || [];
+  const labelsMap = state.config?.category_labels || {};
+  const defaultQs = state.config?.default_questions || {};
+  const initCat = categories[0] || "breakout";
+
+  openModal(
+    `LOG PREDICTION // SIGNAL #${signal.id} (${signal.ticker})`,
+    `
+    <form id="form-log-pred">
+      <div class="form-grid">
+        <div class="form-row">
+          <label>EVAL CATEGORY</label>
+          <select name="category" id="log-cat">${categories.map((c) => `<option value="${c}">${c}</option>`).join("")}</select>
+        </div>
+        <div class="form-row">
+          <label>PREDICTED LABEL</label>
+          <select name="predicted_label" id="log-label">${(labelsMap[initCat] || []).map((l) => `<option value="${l}">${l}</option>`).join("")}</select>
+        </div>
+        <div class="form-row"><label>CONFIDENCE (0.0 - 1.0)</label><input name="confidence" type="number" step="0.05" min="0" max="1" value="0.80" /></div>
+        <div class="form-row"><label>OUTCOME WINDOW (HOURS)</label><input name="outcome_window_hours" type="number" value="48" /></div>
+        <div class="form-row">
+          <label>DIFFICULTY</label>
+          <select name="difficulty"><option value="easy">easy</option><option value="medium" selected>medium</option><option value="hard">hard</option></select>
+        </div>
+        <div class="form-row">
+          <label>SOURCE TAG</label>
+          <select name="source"><option value="ipx_terminal_export" selected>ipx_terminal_export</option><option value="ipx_live_prediction">ipx_live_prediction</option></select>
+        </div>
+        <div class="form-row full"><label>ANALYTICAL QUESTION</label><textarea name="question" id="log-question">${esc(defaultQs[initCat] || "")}</textarea></div>
+        <div class="form-row full"><label>ANALYST NOTES</label><input name="analyst_notes" placeholder="Why you made this call at t₀..." /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action amber">Freeze t₀ Snapshot &amp; Log</button>
+      </div>
+    </form>
+  `
+  );
+
+  document.getElementById("log-cat").addEventListener("change", (e) => {
+    const cat = e.target.value;
+    document.getElementById("log-label").innerHTML = (labelsMap[cat] || [])
+      .map((l) => `<option value="${l}">${l}</option>`)
+      .join("");
+    document.getElementById("log-question").value = defaultQs[cat] || "";
+  });
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-log-pred").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = { ...Object.fromEntries(new FormData(e.target).entries()), signal_id: signal.id };
+    try {
+      const res = await api("/api/predictions", { method: "POST", body: JSON.stringify(payload) });
+      closeModal();
+      state.activeTab = "LOG";
+      await loadBootstrap(true);
+      setStatus(`Logged ${res.prediction.case_code} (${res.prediction.predicted_label}) with frozen t₀ snapshot.`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+function openResolveModal(pred) {
+  const validLabels = state.config?.category_labels?.[pred.category] || [];
+  openModal(
+    `RESOLVE 48-72H OUTCOME // ${pred.case_code}`,
+    `
+    <form id="form-resolve">
+      <div style="margin-bottom:10px;color:#94a3b8;font-size:12px">
+        <b>${esc(pred.title)}</b><br/>
+        Frozen t₀ prediction: <b style="color:#f59e0b">${esc(pred.predicted_label)}</b> (${Math.round(pred.confidence * 100)}%)
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>VERIFIED GROUND-TRUTH LABEL</label>
+          <select name="ground_truth_label">${validLabels.map((l) => `<option value="${l}" ${l === pred.predicted_label ? "selected" : ""}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="form-row"><label>SECONDARY TAG (OPTIONAL)</label><input name="secondary_label" placeholder="e.g. organic_catalog_revival" /></div>
+        <div class="form-row full">
+          <label>REQUIRED CONCEPTS (SEMICOLON = GROUPS, COMMA = ALIASES)</label>
+          <input name="required_concepts" required placeholder="e.g. 4.8x, subscriber baseline; kalshi, sponsor; nhl, maple leafs" />
+        </div>
+        <div class="form-row full">
+          <label>AUTHORITATIVE RATIONALE (POST-WINDOW VERIFICATION)</label>
+          <textarea name="rationale" required placeholder="Explain what actually happened after 48-72h and why this label is ground truth..."></textarea>
+        </div>
+        <div class="form-row"><label>OUTCOME WINDOW (HOURS)</label><input name="outcome_window_hours" type="number" value="${pred.outcome_window_hours ?? 48}" /></div>
+        <div class="form-row"><label>POST-WINDOW METRICS JSON (KEPT OUT OF t₀)</label><input name="outcome_metrics" value="{}" /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action green">Save Verified Outcome</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-resolve").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      const res = await api(`/api/predictions/${pred.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      closeModal();
+      state.activeTab = "LOG";
+      await loadBootstrap(true);
+      setStatus(`Resolved ${res.prediction.case_code} -> ${res.prediction.outcome.label}. Ready to export to IPX-Eval!`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+/* ---------------- Interactive HELP / Operator Key ---------------- */
+function openHelpModal() {
+  openModal(
+    "IPX TERMINAL // OPERATOR'S KEY & BLOOMBERG GUIDE",
+    `
+    <div class="help-section">
+      <h4>1. HOW THE COMMAND BAR WORKS (&lt;TICKER&gt; &lt;FUNCTION&gt; &lt;GO&gt;)</h4>
+      <div class="help-card">
+        Real Bloomberg terminals work like a sentence: <b>WHO</b> (a ticker or sector) + <b>WHAT VIEW</b> (a 2–4 letter function code) + <b>GO</b> (Enter).
+        <div class="sub">Press <b>/</b> anywhere to jump to the command bar, or click any live example below to run it right now:</div>
+        <div class="try-row">
+          <button type="button" class="try-cmd" data-try-cmd="KATT.FMT GP">KATT.FMT GP</button>
+          <button type="button" class="try-cmd" data-try-cmd="NVDA.IP DES">NVDA.IP DES</button>
+          <button type="button" class="try-cmd" data-try-cmd="MUSIC TOP">MUSIC TOP</button>
+          <button type="button" class="try-cmd" data-try-cmd="ALL">ALL</button>
+          <button type="button" class="try-cmd" data-try-cmd="LOG">LOG</button>
+          <button type="button" class="try-cmd" data-try-cmd="EXPORT">EXPORT</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <h4>2. FUNCTION CODES (WHAT THE 4 PANES MEAN)</h4>
+      <div class="help-grid">
+        <div class="help-card"><b>TOP</b> — Cultural Velocity Movers<div class="sub">Bloomberg's top-news/movers screen. Ranks every Content IP ticker by live momentum (CVS). Click any row to load it into GP &amp; DES.</div></div>
+        <div class="help-card"><b>GP</b> — Graph Price (Velocity Chart)<div class="sub">Bloomberg's price chart, adapted for IP. Plots <b>CVS</b> (cyan line) and <b>Contagion Index</b> (amber dashed) across time-stamped t₀ snapshots.</div></div>
+        <div class="help-card"><b>WIRE</b> — Live t₀ Signal Tape<div class="sub">Chronological stream of raw observations (TikTok, X, Reels, Shorts, GDELT news) before outcomes are known. Click <b>Log Prediction</b> on any card.</div></div>
+        <div class="help-card"><b>DES</b> — Description (IP Profile)<div class="sub">Bloomberg's company tear-sheet. Shows who owns/monetizes the IP (studio, label, creator, brand), asset type, aliases, and linked predictions.</div></div>
+        <div class="help-card"><b>LOG</b> — 48–72h Prediction Desk<div class="sub">Tracks open calls frozen at t₀. Once 48–72h passes, click <b>Resolve</b> to record what actually happened in the real world.</div></div>
+        <div class="help-card"><b>EXPORT</b> — IPX-Eval Flywheel<div class="sub">Exports resolved outcomes as schema-validated JSONL (with zero future leakage) straight into your <b>IPX-Eval</b> benchmark.</div></div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <h4>3. SCORES &amp; BADGES (HOVER ANY COLUMN HEADER FOR QUICK HINTS)</h4>
+      <div class="help-grid">
+        <div class="help-card"><b>CVS (0–100) &amp; Δ</b><div class="sub"><b>Cultural Velocity Score</b>: time-decayed momentum combining views-to-followers breakout ratio, share/save intent, creator breadth, and cross-platform spread. <b>Δ</b> is the change since the prior snapshot.</div></div>
+        <div class="help-card"><b>CONTAGION (0–100)</b><div class="sub">Measures whether a spike broke out of one platform/community into multiple platforms, search (Google Trends), or press (GDELT).</div></div>
+        <div class="help-card"><b>STAGE BADGES</b><div class="sub"><span class="pill stage-echo_chamber">echo_chamber</span> Trapped in 1 bubble (&lt;38)<br/><span class="pill stage-emerging_contagion">emerging_contagion</span> Jumping platforms (38–67)<br/><span class="pill stage-mainstream_breakout">mainstream_breakout</span> Multi-surface breakout (68+)</div></div>
+        <div class="help-card"><b>t₀ SNAPSHOT (ZERO LEAKAGE)</b><div class="sub">The exact facts visible at capture time. When you log a prediction, t₀ is <b>frozen</b> so future 48–72h results never contaminate the benchmark prompt.</div></div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <h4>4. THE DAILY 4-STEP OPERATOR WORKFLOW</h4>
+      <div class="help-card">
+        <b>1. Scan TOP &amp; WIRE</b> (or run <b>+ Capture t₀ Signal</b> / <b>GDELT Sweep</b>) →
+        <b>2. Inspect GP &amp; DES</b> to separate real breakouts from echo chambers →
+        <b>3. Log Prediction</b> to freeze t₀ and start the 48–72h clock →
+        <b>4. Resolve &amp; Export</b> to turn real outcomes into live <b>IPX-Eval</b> test cases.
+      </div>
+    </div>
+
+    <div style="font-family:monospace;font-size:11px;color:#8b9bb0;display:flex;justify-content:space-between">
+      <span>Shortcuts: <b>/</b> Command Bar · <b>?</b> Help Key · <b>Esc</b> Close Modal</span>
+      <span>Full doc: TERMINAL_GUIDE.md</span>
+    </div>
+    `
+  );
+
+  document.querySelectorAll("[data-try-cmd]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const cmd = btn.dataset.tryCmd;
+      closeModal();
+      await runCommandText(cmd);
+    });
+  });
+}
+
+async function runCommandText(cmd) {
+  const input = document.getElementById("command-input");
+  try {
+    const res = await api("/api/command", { method: "POST", body: JSON.stringify({ command: cmd }) });
+    if (res.action === "error") {
+      setStatus(res.message, true);
+      return;
+    }
+    if (res.action === "filter_sector") {
+      state.sector = res.sector;
+      document.getElementById("top-sector-label").textContent = `SECTOR: ${state.sector}`;
+      await loadBootstrap(true);
+    } else if (res.action === "select_ticker") {
+      await selectTicker(res.ticker, false);
+      if (["DES", "LOG", "EXPORT"].includes(res.function)) {
+        state.activeTab = res.function;
+        renderDesk();
+      }
+    } else if (res.action === "focus_function") {
+      if (res.function === "HELP") {
+        openHelpModal();
+      } else if (["DES", "LOG", "EXPORT"].includes(res.function)) {
+        state.activeTab = res.function;
+        renderDesk();
+      }
+    } else if (res.action === "refresh") {
+      await loadBootstrap(true);
+    }
+    setStatus(res.message);
+    input.value = "";
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+/* ---------------- Event Wiring ---------------- */
+document.getElementById("command-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const cmd = document.getElementById("command-input").value.trim();
+  if (!cmd) return;
+  await runCommandText(cmd);
+});
+
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.activeTab = btn.dataset.tab;
+    renderDesk();
+  });
+});
+
+document.getElementById("btn-open-capture").addEventListener("click", openCaptureSignalModal);
+document.getElementById("btn-open-gdelt").addEventListener("click", openGdeltModal);
+document.getElementById("btn-quick-export").addEventListener("click", () => {
+  state.activeTab = "EXPORT";
+  renderDesk();
+});
+document.getElementById("btn-open-help").addEventListener("click", openHelpModal);
+document.getElementById("modal-close").addEventListener("click", closeModal);
+document.getElementById("modal-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "modal-backdrop") closeModal();
+});
+
+document.addEventListener("keydown", (e) => {
+  const typing = document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA";
+  if (e.key === "/" && !typing) {
+    e.preventDefault();
+    document.getElementById("command-input").focus();
+  }
+  if (e.key === "?" && !typing) {
+    e.preventDefault();
+    openHelpModal();
+  }
+  if (e.key === "Escape") closeModal();
+});
+
+loadBootstrap(false).catch((err) => setStatus(`Failed to load terminal: ${err.message}`, true));

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ipx-eval.local/schemas/eval_case.schema.json",
+  "title": "IPX-Eval Test Case",
+  "description": "Shared contract for IPX-Eval benchmark cases and future IPX-Terminal 24h-72h outcome exports.",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "category",
+    "sector",
+    "title",
+    "captured_at",
+    "signal_snapshot",
+    "question",
+    "ground_truth"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ipx-(breakout|lineage|contagion|ip_catalyst)-[0-9]{3,}$",
+      "description": "Unique stable identifier for the eval case."
+    },
+    "version": {
+      "type": "string",
+      "description": "Benchmark version, e.g. '0.1'."
+    },
+    "category": {
+      "type": "string",
+      "enum": ["breakout", "lineage", "contagion", "ip_catalyst"]
+    },
+    "sector": {
+      "type": "string",
+      "enum": ["POP", "MUSIC", "FILM_TV", "GAMING", "CREATORS", "SPORTS", "DEALS"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "captured_at": {
+      "type": "string",
+      "description": "ISO-8601 timestamp representing t_0 (the observation cutoff before outcome resolution)."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["curated_seed", "ipx_terminal_export", "ipx_live_prediction", "content_factory_feedback"],
+      "default": "curated_seed"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard"],
+      "default": "medium"
+    },
+    "signal_snapshot": {
+      "type": "object",
+      "description": "Structured t_0 observations available to the model (no future leakage).",
+      "required": ["summary", "platforms"],
+      "properties": {
+        "summary": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "samples": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "entities_mentioned": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "question": {
+      "type": "string",
+      "description": "Specific analytical prompt for the evaluated model."
+    },
+    "ground_truth": {
+      "type": "object",
+      "required": ["label", "required_concepts", "rationale"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Canonical primary classification label for the category."
+        },
+        "secondary_label": {
+          "type": ["string", "null"],
+          "description": "Optional secondary structured tag (e.g., mutation_type, target_surface, catalyst_type, risk_level)."
+        },
+        "required_concepts": {
+          "type": "array",
+          "description": "List of concept groups; each entry is either a string or list of accepted aliases.",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            ]
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Authoritative ground-truth explanation verified after the outcome window."
+        },
+        "outcome_window_hours": {
+          "type": ["integer", "null"],
+          "description": "Observation-to-outcome window (e.g., 24, 48, 72) when applicable."
+        }
+      }
+    }
+  }
+}

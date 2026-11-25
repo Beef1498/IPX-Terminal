@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipx-terminal"
+version = "0.1.0"
+description = "Bloomberg-style Content IP workstation, signal ingestion engine, and 48-72h IPX-Eval outcome logger."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+ipx-terminal = "ipx_terminal.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
