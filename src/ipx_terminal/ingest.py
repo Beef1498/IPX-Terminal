@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import json
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.parse
@@ -212,8 +213,9 @@ def sweep_watchlist(
     tickers: Optional[List[str]] = None,
     timespan: str = "24h",
     max_records: int = 8,
+    delay_sec: float = 5.5,
 ) -> Dict[str, Any]:
-    """Run GDELT sweeps across watchlist entities and report overdue 48-72h predictions."""
+    """Run polite rate-limited GDELT sweeps across watchlist entities and report overdue 48-72h predictions."""
     entities = db.list_entities()
     if tickers:
         wanted = {normalize_ticker(t) for t in tickers}
@@ -221,22 +223,34 @@ def sweep_watchlist(
 
     ingested: List[Dict[str, Any]] = []
     errors: List[str] = []
-    for ent in entities[:5]:
+    targets = entities[:5]
+    for idx, ent in enumerate(targets):
+        if idx > 0 and delay_sec > 0:
+            time.sleep(delay_sec)
         query = f'"{ent["name"].split("—")[0].strip()}"'
-        try:
-            sig = ingest_gdelt(
-                db=db,
-                query=query,
-                ticker=ent["ticker"],
-                sector=ent["sector"],
-                entity_name=ent["name"],
-                owner_holder=ent["owner_holder"],
-                max_records=max_records,
-                timespan=timespan,
-            )
-            ingested.append({"ticker": ent["ticker"], "signal_id": sig["id"], "cvs": sig["cvs_score"]})
-        except Exception as exc:
-            errors.append(f"{ent['ticker']}: {exc}")
+        for attempt in range(2):
+            try:
+                sig = ingest_gdelt(
+                    db=db,
+                    query=query,
+                    ticker=ent["ticker"],
+                    sector=ent["sector"],
+                    entity_name=ent["name"],
+                    owner_holder=ent["owner_holder"],
+                    max_records=max_records,
+                    timespan=timespan,
+                )
+                ingested.append({"ticker": ent["ticker"], "signal_id": sig["id"], "cvs": sig["cvs_score"]})
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429 and attempt == 0:
+                    time.sleep(max(6.0, delay_sec * 1.5))
+                    continue
+                errors.append(f"{ent['ticker']}: {exc}")
+                break
+            except Exception as exc:
+                errors.append(f"{ent['ticker']}: {exc}")
+                break
 
     overdue = [p for p in db.list_predictions(status="pending", limit=200) if p["overdue"]]
     return {
