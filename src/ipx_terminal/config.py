@@ -72,6 +72,7 @@ FUNCTION_CODES: Dict[str, str] = {
     "DES": "IP Entity profile, rights holder, aliases, and catalysts",
     "WIRE": "Live t_0 signal ingestion tape and manual capture",
     "LOG": "Prediction logger and 48-72h outcome resolution desk",
+    "BRIEFS": "Creative Brief generator & Content Factory post outcome logger",
     "EXPORT": "Schema-validated IPX-Eval JSONL export",
     "CN": "Catalyst and news signals for active ticker",
     "MA": "Deals, licensing, and M&A sector filter",

@@ -9,9 +9,14 @@ import threading
 import unittest
 import urllib.request
 
-from ipx_terminal.ai_scorer import _extract_json_object
+from ipx_terminal.ai_scorer import _extract_json_object, generate_creative_brief
 from ipx_terminal.db import TerminalDB
-from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text, validate_eval_case
+from ipx_terminal.exporter import (
+    export_creative_feedback,
+    export_resolved_to_jsonl,
+    parse_concepts_text,
+    validate_eval_case,
+)
 from ipx_terminal.ingest import _detect_platform_from_url, seed_demo_workspace
 from ipx_terminal.scoring import compute_velocity_and_contagion
 from ipx_terminal.server import create_server, parse_command_bar
@@ -161,6 +166,67 @@ class TestIPXTerminal(unittest.TestCase):
         stats = self.db.get_dashboard_stats()
         self.assertEqual(stats["prediction_accuracy_pct"], 100.0)
         self.assertEqual(stats["ai_accuracy_pct"], 0.0)
+
+    def test_creative_brief_and_blind_winner_vs_flop_ab_export(self) -> None:
+        sig = self.db.insert_signal(
+            ticker="KATT.FMT",
+            title="Katt Williams CapCut template",
+            summary="35.3K shares on 78.6K likes.",
+            platforms=["TikTok"],
+            sector="CREATORS",
+        )
+        draft = generate_creative_brief(sig, target_platform="TikTok", api_key="")
+        self.assertIn("hook_2s", draft)
+
+        win = self.db.create_brief(
+            signal_id=sig["id"],
+            target_platform="TikTok",
+            angle="Deadpan marriage-chores cutout",
+            hook_2s="Cold open on Katt cutout at 0.0s",
+            on_screen_text="My husband's work ethic when it's time to unload the dishwasher",
+            caption="45 seconds of effort max",
+            edit_beats=["0-2s: cutout drop", "2-7s: punchline"],
+            audio_cue="original sound",
+        )
+        flop = self.db.create_brief(
+            signal_id=sig["id"],
+            target_platform="TikTok",
+            angle="Generic AI reaction",
+            hook_2s="Hey guys check out this funny trend!",
+            on_screen_text="Wait until the end for this hilarious meme!",
+            caption="Like and subscribe for more trending content! #fyp #viral",
+            edit_beats=["0-4s: slow intro"],
+            audio_cue="generic track",
+        )
+        self.db.grade_brief(
+            brief_id=win["id"],
+            verdict="winner",
+            account_handle="@ipx_test",
+            views_48h=185000,
+            likes_48h=14200,
+            shares_48h=5100,
+            follower_baseline=12000,
+            outcome_notes="15.4x follower breakout; deadpan hook held 64% past 3s.",
+        )
+        self.db.grade_brief(
+            brief_id=flop["id"],
+            verdict="flop",
+            account_handle="@ipx_test",
+            views_48h=920,
+            likes_48h=24,
+            shares_48h=1,
+            follower_baseline=12000,
+            outcome_notes="0.08x baseline; generic AI clickbait intro caused immediate swipe-away.",
+        )
+
+        out_dir = Path(self._tmp.name) / "creative"
+        exp = export_creative_feedback(self.db, out_dir=out_dir, version="0.5")
+        self.assertEqual(exp["graded_count"], 2)
+        self.assertEqual(exp["pairs_exported"], 1)
+        pair_line = json.loads((out_dir / "creative_ab_pairs.jsonl").read_text(encoding="utf-8").strip())
+        # Ensure metrics are stripped from blind candidates!
+        self.assertNotIn("views_48h", pair_line["candidate_a"])
+        self.assertEqual(pair_line["ground_truth"]["winner"], "A")
 
 
 if __name__ == "__main__":

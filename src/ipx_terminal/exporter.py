@@ -201,3 +201,95 @@ def parse_concepts_text(raw: str) -> List[Any]:
             continue
         groups.append(aliases[0] if len(aliases) == 1 else aliases)
     return groups
+
+
+def export_creative_feedback(
+    db: TerminalDB,
+    out_dir: Optional[Path] = None,
+    version: str = "0.5",
+) -> Dict[str, Any]:
+    """Export graded Creative Briefs as blind winner-vs-flop A/B pairs (for IPX-Eval v0.5-creative & DPO)."""
+    target_dir = Path(out_dir) if out_dir else (DEFAULT_EXPORT_DIR / "creative-feedback")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    graded = db.list_briefs(status="graded", limit=500)
+    winners = [b for b in graded if b["verdict"] == "winner"]
+    flops = [b for b in graded if b["verdict"] == "flop"]
+
+    # 1. Full graded feedback ledger
+    ledger_path = target_dir / "content_factory_feedback.jsonl"
+    ledger_lines = [json.dumps(b, ensure_ascii=False) for b in graded]
+    if ledger_lines:
+        ledger_path.write_text("\n".join(ledger_lines) + "\n", encoding="utf-8")
+
+    # 2. Blind pairwise Winner vs. Flop A/B eval & DPO training pairs (metrics stripped from candidates!)
+    pairs: List[Dict[str, Any]] = []
+    pair_idx = 1
+    for w in winners:
+        for f in flops:
+            if len(pairs) >= 50:
+                break
+            pairs.append(
+                {
+                    "id": f"ipx-creative_ab-{pair_idx:03d}",
+                    "version": version,
+                    "source": "content_factory_feedback",
+                    "platform": w["target_platform"],
+                    "question": (
+                        "Given these two real short-form creative executions (metrics hidden), "
+                        "pick which post outperformed (A or B) and explain why the hook, on-screen text, "
+                        "caption, and edit pacing worked better."
+                    ),
+                    "candidate_a": {
+                        "ticker": w["ticker"],
+                        "angle": w["angle"],
+                        "hook_2s": w["hook_2s"],
+                        "on_screen_text": w["on_screen_text"],
+                        "caption": w["caption"],
+                        "edit_beats": w["edit_beats"],
+                        "audio_cue": w["audio_cue"],
+                    },
+                    "candidate_b": {
+                        "ticker": f["ticker"],
+                        "angle": f["angle"],
+                        "hook_2s": f["hook_2s"],
+                        "on_screen_text": f["on_screen_text"],
+                        "caption": f["caption"],
+                        "edit_beats": f["edit_beats"],
+                        "audio_cue": f["audio_cue"],
+                    },
+                    "ground_truth": {
+                        "winner": "A",
+                        "winner_metrics": {
+                            "views_48h": w["views_48h"],
+                            "breakout_ratio": w["breakout_ratio"],
+                            "share_to_like_pct": w["share_to_like_pct"],
+                        },
+                        "flop_metrics": {
+                            "views_48h": f["views_48h"],
+                            "breakout_ratio": f["breakout_ratio"],
+                            "share_to_like_pct": f["share_to_like_pct"],
+                        },
+                        "rationale": f"Winner notes: {w['outcome_notes']} | Flop notes: {f['outcome_notes']}".strip(),
+                    },
+                }
+            )
+            pair_idx += 1
+
+    pairs_path = target_dir / "creative_ab_pairs.jsonl"
+    if pairs:
+        pairs_path.write_text(
+            "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs) + "\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "out_dir": str(target_dir),
+        "graded_count": len(graded),
+        "winners_count": len(winners),
+        "flops_count": len(flops),
+        "pairs_exported": len(pairs),
+        "ledger_path": str(ledger_path) if ledger_lines else None,
+        "pairs_path": str(pairs_path) if pairs else None,
+        "preview_jsonl": "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs[:2]),
+    }

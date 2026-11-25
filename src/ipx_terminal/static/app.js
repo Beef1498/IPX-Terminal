@@ -7,11 +7,13 @@ const state = {
   movers: [],
   signals: [],
   predictions: [],
+  briefs: [],
   entities: [],
   activeTicker: null,
   tickerDetail: null,
   activeTab: "DES",
   lastExport: null,
+  lastCreativeExport: null,
 };
 
 function esc(str) {
@@ -45,6 +47,7 @@ async function loadBootstrap(preserveTicker = true) {
   state.movers = data.movers;
   state.signals = data.signals;
   state.predictions = data.predictions;
+  state.briefs = data.briefs || [];
   state.entities = data.entities;
 
   renderKpis();
@@ -251,7 +254,10 @@ function renderWire() {
           <div class="wire-summary">${esc(s.summary)}</div>
           <div class="wire-footer">
             <span>CVS <b style="color:#22d3ee">${s.cvs_score}</b> · CONTAGION <b>${s.contagion_index}</b> <span class="pill stage-${esc(s.contagion_stage)}">${esc(s.contagion_stage)}</span></span>
-            <button type="button" class="btn-action" data-log-signal="${s.id}">Log Prediction</button>
+            <div style="display:flex;gap:5px">
+              <button type="button" class="btn-action cyan" data-brief-signal="${s.id}">Brief</button>
+              <button type="button" class="btn-action" data-log-signal="${s.id}">Log Prediction</button>
+            </div>
           </div>
         </div>
       `;
@@ -260,6 +266,12 @@ function renderWire() {
 
   list.querySelectorAll("[data-jump-ticker]").forEach((el) => {
     el.addEventListener("click", () => selectTicker(el.dataset.jumpTicker));
+  });
+  list.querySelectorAll("[data-brief-signal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sig = state.signals.find((x) => x.id === Number(btn.dataset.briefSignal));
+      if (sig) openCreateBriefModal(sig);
+    });
   });
   list.querySelectorAll("[data-log-signal]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -306,6 +318,73 @@ function renderDesk() {
     }
     body.innerHTML = state.predictions.map(renderPredictionCardHtml).join("");
     wireResolveButtons(body);
+    return;
+  }
+
+  if (state.activeTab === "BRIEFS") {
+    const exportBar = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">
+        <span style="font-family:monospace;font-size:11px;color:#94a3b8">CREATIVE BRIEFS &amp; CONTENT FACTORY FEEDBACK (${state.briefs.length})</span>
+        <button type="button" class="btn-action amber" id="btn-export-creative">Export Winner/Flop A/B Pairs</button>
+      </div>
+      ${state.lastCreativeExport ? `<div style="font-family:monospace;font-size:11px;color:#34d399;margin-bottom:8px">✓ Exported ${state.lastCreativeExport.graded_count} graded briefs &amp; ${state.lastCreativeExport.pairs_exported} blind A/B pairs → ${esc(state.lastCreativeExport.out_dir)}</div>` : ""}
+    `;
+    const cards = state.briefs.length
+      ? state.briefs
+          .map((b) => {
+            const isGraded = b.status === "graded";
+            const badgeCls =
+              b.verdict === "winner"
+                ? "badge-resolved"
+                : b.verdict === "flop"
+                ? "stage-echo_chamber"
+                : "badge-pending";
+            const badgeTxt = isGraded ? `POSTED · ${b.verdict.toUpperCase()}` : "DRAFT BRIEF";
+            const statsLine = isGraded
+              ? `<div style="font-family:monospace;font-size:11px;color:#22d3ee;margin-top:4px">
+                   48h: ${b.views_48h != null ? b.views_48h.toLocaleString() + " views" : "--"}
+                   ${b.breakout_ratio != null ? ` (${b.breakout_ratio}x subs)` : ""}
+                   ${b.share_to_like_pct != null ? ` · ${b.share_to_like_pct}% share/like` : ""}
+                   ${b.account_handle ? ` · ${esc(b.account_handle)}` : ""}
+                 </div>
+                 <div style="color:#94a3b8;font-size:11.5px;margin-top:3px">${esc(b.outcome_notes)}</div>`
+              : `<div style="margin-top:6px;display:flex;justify-content:flex-end">
+                   <button type="button" class="btn-action green" data-grade-brief="${b.id}">Log 48h Post Outcome</button>
+                 </div>`;
+            return `
+              <div class="pred-card">
+                <div class="pred-head">
+                  <span><b style="color:#f59e0b">${esc(b.ticker)}</b> · ${esc(b.target_platform)} · <span style="color:#8b9bb0">${esc(b.model_used)}</span></span>
+                  <span class="pill ${badgeCls}">${badgeTxt}</span>
+                </div>
+                <div style="font-weight:600;margin-bottom:3px">${esc(b.on_screen_text)}</div>
+                <div style="font-size:11.5px;color:#cbd5e1"><b>2s Hook:</b> ${esc(b.hook_2s)}</div>
+                <div style="font-size:11.5px;color:#94a3b8;margin-top:2px"><b>Caption:</b> ${esc(b.caption)}</div>
+                ${statsLine}
+              </div>
+            `;
+          })
+          .join("")
+      : `<div style="color:#8b9bb0">No Creative Briefs yet. Click <b>Brief</b> on any signal in <b>WIRE</b> to generate a hook, on-screen text, caption, and edit beats.</div>`;
+    body.innerHTML = exportBar + cards;
+    body.querySelectorAll("[data-grade-brief]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const brief = state.briefs.find((x) => x.id === Number(btn.dataset.gradeBrief));
+        if (brief) openGradeBriefModal(brief);
+      });
+    });
+    document.getElementById("btn-export-creative").addEventListener("click", async () => {
+      try {
+        state.lastCreativeExport = await api("/api/briefs/export", {
+          method: "POST",
+          body: JSON.stringify({ version: "0.5" }),
+        });
+        setStatus(`Exported ${state.lastCreativeExport.pairs_exported} blind Winner-vs-Flop A/B pairs -> ${state.lastCreativeExport.out_dir}`);
+        renderDesk();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
     return;
   }
 
@@ -449,6 +528,120 @@ function openPasteUrlModal() {
       setStatus(`Auto-ingested #${res.signal.id} [${res.signal.ticker}] -> ${res.signal.title}`);
     } catch (err) {
       setStatus(`URL ingest error: ${err.message}`, true);
+    }
+  });
+}
+
+function openCreateBriefModal(signal) {
+  openModal(
+    `GENERATE CREATIVE BRIEF // ${signal.ticker} (SIGNAL #${signal.id})`,
+    `
+    <form id="form-brief">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-family:monospace;font-size:10.5px;color:#8b9bb0">PLATFORM</label>
+          <select name="target_platform" id="brief-platform" style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:4px 8px;border-radius:3px">
+            <option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>X</option><option>Facebook Reels</option>
+          </select>
+        </div>
+        <button type="button" class="btn-action cyan" id="btn-gen-brief">Auto-Draft Brief</button>
+      </div>
+      <input type="hidden" name="model_used" id="brief-model" value="manual" />
+      <div class="form-grid">
+        <div class="form-row full"><label>CULTURAL ANGLE</label><input name="angle" id="brief-angle" required placeholder="What makes this native & shareable right now?" /></div>
+        <div class="form-row full"><label>2-SECOND HOOK (VISUAL / AUDIO OPENER)</label><input name="hook_2s" id="brief-hook" required placeholder="First 2 seconds that stops the scroll..." /></div>
+        <div class="form-row full"><label>ON-SCREEN TEXT (<=12 WORDS)</label><input name="on_screen_text" id="brief-ost" required placeholder="Exact overlay text..." /></div>
+        <div class="form-row full"><label>NATIVE CAPTION</label><textarea name="caption" id="brief-caption" required placeholder="Punchy platform-native caption (no AI slop)..."></textarea></div>
+        <div class="form-row full"><label>EDIT BEATS (ONE PER LINE)</label><textarea name="edit_beats" id="brief-beats" placeholder="0-2s: Hook...\n2-6s: Contrast...\n6-10s: Twist..."></textarea></div>
+        <div class="form-row full"><label>AUDIO / FORMAT CUE</label><input name="audio_cue" id="brief-audio" placeholder="Trending sound, CapCut template, or deadpan VO..." /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action amber">Save Creative Brief</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  const runAutoDraft = async () => {
+    const plat = document.getElementById("brief-platform").value;
+    setStatus(`Drafting ${plat} Creative Brief for ${signal.ticker}...`);
+    try {
+      const res = await api("/api/briefs/generate", {
+        method: "POST",
+        body: JSON.stringify({ signal_id: signal.id, target_platform: plat }),
+      });
+      const d = res.draft;
+      document.getElementById("brief-model").value = d.model_used || "template_draft";
+      document.getElementById("brief-angle").value = d.angle || "";
+      document.getElementById("brief-hook").value = d.hook_2s || "";
+      document.getElementById("brief-ost").value = d.on_screen_text || "";
+      document.getElementById("brief-caption").value = d.caption || "";
+      document.getElementById("brief-beats").value = (d.edit_beats || []).join("\n");
+      document.getElementById("brief-audio").value = d.audio_cue || "";
+      setStatus(`Drafted brief (${d.model_used}) — tweak to taste and click Save.`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+  document.getElementById("btn-gen-brief").addEventListener("click", runAutoDraft);
+  runAutoDraft();
+
+  document.getElementById("form-brief").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = { ...Object.fromEntries(new FormData(e.target).entries()), signal_id: signal.id };
+    try {
+      await api("/api/briefs", { method: "POST", body: JSON.stringify(payload) });
+      closeModal();
+      state.activeTab = "BRIEFS";
+      await loadBootstrap(true);
+      setStatus(`Saved Creative Brief for ${signal.ticker}. Post it and log the 48h outcome!`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+}
+
+function openGradeBriefModal(brief) {
+  openModal(
+    `LOG 48H POST OUTCOME // ${brief.ticker} (CONTENT FACTORY FEEDBACK)`,
+    `
+    <form id="form-grade-brief">
+      <div style="color:#94a3b8;font-size:12px;margin-bottom:10px"><b>${esc(brief.on_screen_text)}</b></div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>VERDICT</label>
+          <select name="verdict"><option value="winner">winner (outperformed)</option><option value="average">average (baseline)</option><option value="flop">flop (underperformed)</option></select>
+        </div>
+        <div class="form-row"><label>ACCOUNT HANDLE</label><input name="account_handle" placeholder="e.g. @yourpage" /></div>
+        <div class="form-row full"><label>POSTED URL (OPTIONAL)</label><input name="posted_url" placeholder="https://..." /></div>
+        <div class="form-row"><label>48H VIEWS</label><input name="views_48h" type="number" placeholder="e.g. 145000" /></div>
+        <div class="form-row"><label>ACCOUNT FOLLOWERS</label><input name="follower_baseline" type="number" placeholder="e.g. 12000" /></div>
+        <div class="form-row"><label>48H LIKES</label><input name="likes_48h" type="number" placeholder="e.g. 9200" /></div>
+        <div class="form-row"><label>48H SHARES</label><input name="shares_48h" type="number" placeholder="e.g. 3100" /></div>
+        <div class="form-row full"><label>WHY IT POPPED OR FLOPPED (FOR v0.5-CREATIVE &amp; DPO)</label><textarea name="outcome_notes" required placeholder="e.g. Hook held 62% past 3s and caption sparked 400+ debate comments..."></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action green">Save Post Outcome</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-grade-brief").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/briefs/${brief.id}/grade`, {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries())),
+      });
+      closeModal();
+      state.activeTab = "BRIEFS";
+      await loadBootstrap(true);
+      setStatus(`Graded post outcome for ${brief.ticker}. Ready to export Winner/Flop A/B pairs!`);
+    } catch (err) {
+      setStatus(err.message, true);
     }
   });
 }
@@ -774,14 +967,14 @@ async function runCommandText(cmd) {
       await loadBootstrap(true);
     } else if (res.action === "select_ticker") {
       await selectTicker(res.ticker, false);
-      if (["DES", "LOG", "EXPORT"].includes(res.function)) {
+      if (["DES", "LOG", "BRIEFS", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }
     } else if (res.action === "focus_function") {
       if (res.function === "HELP") {
         openHelpModal();
-      } else if (["DES", "LOG", "EXPORT"].includes(res.function)) {
+      } else if (["DES", "LOG", "BRIEFS", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }

@@ -151,3 +151,93 @@ def score_signal_with_ai(
         "key_signals": [str(x) for x in key_signals[:5]],
         "reasoning": reasoning,
     }
+
+
+def _fallback_brief_template(signal: Dict[str, Any], target_platform: str) -> Dict[str, Any]:
+    """Deterministic anti-slop editable draft brief when no AI API key is configured."""
+    ent = (signal.get("entities_mentioned") or [signal["ticker"]])[0]
+    sample = (signal.get("samples") or [signal["title"]])[0].strip("'\"")
+    return {
+        "model_used": "template_draft",
+        "target_platform": target_platform,
+        "angle": f"Fast-turnaround cultural reaction to {ent} ({signal['sector']})",
+        "hook_2s": f"Cold open directly on the visual contrast / punchline for {ent} (zero intro, first cut at 1.2s).",
+        "on_screen_text": f"Nobody is talking about what just happened with {ent}...",
+        "caption": f"{sample[:110]} — are we early or is this already everywhere?",
+        "edit_beats": [
+            "0.0-1.8s: Visual pattern-interrupt + on-screen text lock",
+            "1.8-5.5s: Core cultural reference / receipt frame (fast 1.2s cuts)",
+            "5.5-9.5s: Punchline or unexpected twist that triggers re-watch/shares",
+            "9.5-11.0s: Seamless loop back into frame 1 (no 'like and follow' outro)",
+        ],
+        "audio_cue": f"Match native {target_platform} trending sound or clean deadpan voiceover.",
+    }
+
+
+def generate_creative_brief(
+    signal: Dict[str, Any],
+    target_platform: str = "TikTok",
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    timeout: int = 45,
+) -> Dict[str, Any]:
+    """Generate a native, anti-slop Creative Brief from a t_0 signal (falls back to draft template if no key)."""
+    creds = resolve_ai_credentials(api_key=api_key, base_url=base_url, model=model)
+    if not creds["api_key"] and "generativelanguage.googleapis.com" in creds["base_url"]:
+        return _fallback_brief_template(signal, target_platform)
+
+    system_prompt = (
+        "You are an elite viral short-form creative director who understands TikTok, Instagram Reels, "
+        "YouTube Shorts, and X subcultures deeply. Never write corporate or AI-sounding hooks, cringe emojis, "
+        "or generic 'Wait until the end!' clickbait. Return STRICT JSON with keys: "
+        "'angle' (string), 'hook_2s' (string), 'on_screen_text' (string, <=12 words), "
+        "'caption' (string, native & punchy), 'edit_beats' (list of 3-4 concise timed beat strings), "
+        "and 'audio_cue' (string)."
+    )
+    user_prompt = (
+        f"Target Platform: {target_platform}\n"
+        f"IP Ticker: {signal['ticker']} ({signal['sector']})\n"
+        f"Signal Title: {signal['title']}\n"
+        f"t_0 Summary: {signal['summary']}\n"
+        f"Verbatim Samples: {json.dumps(signal.get('samples', []), ensure_ascii=False)}\n"
+        f"Metrics: {json.dumps(signal.get('metrics', {}), ensure_ascii=False)}\n\n"
+        "Create a sharp, native creative brief that could realistically break out on this platform."
+    )
+    payload = {
+        "model": creds["model"],
+        "temperature": 0.65,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    headers = {"Content-Type": "application/json"}
+    if creds["api_key"]:
+        headers["Authorization"] = f"Bearer {creds['api_key']}"
+
+    req = urllib.request.Request(
+        f"{creds['base_url']}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw_resp = json.loads(resp.read().decode("utf-8"))
+        parsed = _extract_json_object(raw_resp["choices"][0]["message"]["content"])
+        beats = parsed.get("edit_beats") or []
+        if not isinstance(beats, list):
+            beats = [str(beats)]
+        return {
+            "model_used": creds["model"],
+            "target_platform": target_platform,
+            "angle": str(parsed.get("angle", "")).strip(),
+            "hook_2s": str(parsed.get("hook_2s", "")).strip(),
+            "on_screen_text": str(parsed.get("on_screen_text", "")).strip(),
+            "caption": str(parsed.get("caption", "")).strip(),
+            "edit_beats": [str(b).strip() for b in beats[:5] if str(b).strip()],
+            "audio_cue": str(parsed.get("audio_cue", "")).strip(),
+        }
+    except Exception:
+        return _fallback_brief_template(signal, target_platform)

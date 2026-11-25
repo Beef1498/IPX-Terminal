@@ -21,9 +21,14 @@ from ipx_terminal.config import (
     VALID_SECTORS,
     VALID_SOURCES,
 )
-from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, score_signal_with_ai
+from ipx_terminal.ai_scorer import (
+    DEFAULT_AI_BASE_URL,
+    DEFAULT_AI_MODEL,
+    generate_creative_brief,
+    score_signal_with_ai,
+)
 from ipx_terminal.db import TerminalDB, normalize_ticker
-from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
+from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_jsonl, parse_concepts_text
 from ipx_terminal.ingest import ingest_gdelt, ingest_url, seed_demo_workspace, sweep_watchlist
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -144,6 +149,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                                 limit=40,
                             ),
                             "predictions": db.list_predictions(limit=60),
+                            "briefs": db.list_briefs(limit=40),
                             "entities": db.list_entities(),
                         }
                     )
@@ -322,6 +328,67 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     out_dir = Path(body["out_dir"]) if body.get("out_dir") else DEFAULT_EXPORT_DIR
                     version = str(body.get("version", "0.4"))
                     result = export_resolved_to_jsonl(db=db, out_dir=out_dir, version=version)
+                    self._send_json({"ok": True, **result})
+                    return
+
+                if path == "/api/briefs/generate":
+                    sig = db.get_signal(int(body["signal_id"]))
+                    if not sig:
+                        self._send_json({"error": "Signal not found"}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    draft = generate_creative_brief(
+                        signal=sig,
+                        target_platform=str(body.get("target_platform", "TikTok")),
+                        api_key=body.get("api_key") or None,
+                        base_url=body.get("base_url") or DEFAULT_AI_BASE_URL,
+                        model=body.get("model") or DEFAULT_AI_MODEL,
+                    )
+                    self._send_json({"ok": True, "draft": draft})
+                    return
+
+                if path == "/api/briefs":
+                    beats = body.get("edit_beats", [])
+                    if isinstance(beats, str):
+                        beats = [b.strip() for b in beats.splitlines() if b.strip()]
+                    brief = db.create_brief(
+                        signal_id=int(body["signal_id"]),
+                        target_platform=str(body.get("target_platform", "TikTok")),
+                        angle=str(body["angle"]),
+                        hook_2s=str(body["hook_2s"]),
+                        on_screen_text=str(body["on_screen_text"]),
+                        caption=str(body["caption"]),
+                        edit_beats=beats,
+                        audio_cue=str(body.get("audio_cue", "")),
+                        model_used=str(body.get("model_used", "manual")),
+                    )
+                    self._send_json({"ok": True, "brief": brief}, status=HTTPStatus.CREATED)
+                    return
+
+                if path.startswith("/api/briefs/") and path.endswith("/grade"):
+                    brief_id = int(path[len("/api/briefs/") : -len("/grade")].strip("/"))
+                    def _opt_int(key: str) -> Optional[int]:
+                        v = body.get(key)
+                        return None if v in ("", None) else int(v)
+                    graded = db.grade_brief(
+                        brief_id=brief_id,
+                        verdict=str(body["verdict"]),
+                        account_handle=str(body.get("account_handle", "")),
+                        posted_url=str(body.get("posted_url", "")),
+                        views_48h=_opt_int("views_48h"),
+                        likes_48h=_opt_int("likes_48h"),
+                        shares_48h=_opt_int("shares_48h"),
+                        saves_48h=_opt_int("saves_48h"),
+                        comments_48h=_opt_int("comments_48h"),
+                        follower_baseline=_opt_int("follower_baseline"),
+                        outcome_notes=str(body.get("outcome_notes", "")),
+                    )
+                    self._send_json({"ok": True, "brief": graded})
+                    return
+
+                if path == "/api/briefs/export":
+                    out_dir = Path(body["out_dir"]) if body.get("out_dir") else (DEFAULT_EXPORT_DIR / "creative-feedback")
+                    version = str(body.get("version", "0.5"))
+                    result = export_creative_feedback(db=db, out_dir=out_dir, version=version)
                     self._send_json({"ok": True, **result})
                     return
 

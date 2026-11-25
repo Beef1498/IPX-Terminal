@@ -92,6 +92,38 @@ CREATE TABLE IF NOT EXISTS outcomes (
     prediction_correct INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS creative_briefs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id INTEGER NOT NULL,
+    ticker TEXT NOT NULL,
+    sector TEXT NOT NULL,
+    target_platform TEXT NOT NULL DEFAULT 'TikTok',
+    angle TEXT NOT NULL,
+    hook_2s TEXT NOT NULL,
+    on_screen_text TEXT NOT NULL,
+    caption TEXT NOT NULL,
+    edit_beats_json TEXT NOT NULL DEFAULT '[]',
+    audio_cue TEXT NOT NULL DEFAULT '',
+    model_used TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'draft',
+    account_handle TEXT NOT NULL DEFAULT '',
+    posted_url TEXT NOT NULL DEFAULT '',
+    views_48h INTEGER,
+    likes_48h INTEGER,
+    shares_48h INTEGER,
+    saves_48h INTEGER,
+    comments_48h INTEGER,
+    follower_baseline INTEGER,
+    verdict TEXT,
+    outcome_notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    graded_at TEXT,
+    FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE,
+    FOREIGN KEY (ticker) REFERENCES entities(ticker) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_briefs_status ON creative_briefs(status, created_at DESC);
 """
 
 
@@ -760,4 +792,190 @@ class TerminalDB:
             "prediction_accuracy_pct": accuracy,
             "ai_resolved_predictions": ai_resolved,
             "ai_accuracy_pct": ai_accuracy,
+        }
+
+    # ------------------------------------------------------------------
+    # Creative Briefs & Content Factory Feedback (Winner vs. Flop Loop)
+    # ------------------------------------------------------------------
+    def create_brief(
+        self,
+        signal_id: int,
+        target_platform: str,
+        angle: str,
+        hook_2s: str,
+        on_screen_text: str,
+        caption: str,
+        edit_beats: Optional[Sequence[str]] = None,
+        audio_cue: str = "",
+        model_used: str = "manual",
+    ) -> Dict[str, Any]:
+        sig = self.get_signal(signal_id)
+        if not sig:
+            raise ValueError(f"Signal #{signal_id} not found")
+        now = utc_now_iso()
+        beats = [b.strip() for b in (edit_beats or []) if b and b.strip()]
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO creative_briefs (
+                    signal_id, ticker, sector, target_platform, angle, hook_2s,
+                    on_screen_text, caption, edit_beats_json, audio_cue,
+                    model_used, status, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                """,
+                (
+                    signal_id,
+                    sig["ticker"],
+                    sig["sector"],
+                    target_platform.strip() or "TikTok",
+                    angle.strip(),
+                    hook_2s.strip(),
+                    on_screen_text.strip(),
+                    caption.strip(),
+                    json.dumps(beats),
+                    audio_cue.strip(),
+                    model_used.strip() or "manual",
+                    now,
+                ),
+            )
+            brief_id = cur.lastrowid
+        return self.get_brief(int(brief_id))  # type: ignore[return-value]
+
+    def grade_brief(
+        self,
+        brief_id: int,
+        verdict: str,
+        account_handle: str = "",
+        posted_url: str = "",
+        views_48h: Optional[int] = None,
+        likes_48h: Optional[int] = None,
+        shares_48h: Optional[int] = None,
+        saves_48h: Optional[int] = None,
+        comments_48h: Optional[int] = None,
+        follower_baseline: Optional[int] = None,
+        outcome_notes: str = "",
+    ) -> Dict[str, Any]:
+        norm_verdict = verdict.strip().lower()
+        if norm_verdict not in ("winner", "average", "flop"):
+            raise ValueError("verdict must be 'winner', 'average', or 'flop'")
+        if not self.get_brief(brief_id):
+            raise ValueError(f"Creative brief #{brief_id} not found")
+        now = utc_now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE creative_briefs SET
+                    status = 'graded',
+                    verdict = ?,
+                    account_handle = ?,
+                    posted_url = ?,
+                    views_48h = ?,
+                    likes_48h = ?,
+                    shares_48h = ?,
+                    saves_48h = ?,
+                    comments_48h = ?,
+                    follower_baseline = ?,
+                    outcome_notes = ?,
+                    graded_at = ?
+                WHERE id = ?
+                """,
+                (
+                    norm_verdict,
+                    account_handle.strip(),
+                    posted_url.strip(),
+                    views_48h,
+                    likes_48h,
+                    shares_48h,
+                    saves_48h,
+                    comments_48h,
+                    follower_baseline,
+                    outcome_notes.strip(),
+                    now,
+                    brief_id,
+                ),
+            )
+        return self.get_brief(brief_id)  # type: ignore[return-value]
+
+    def get_brief(self, brief_id: int) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT b.*, s.title AS signal_title, s.summary AS signal_summary
+                FROM creative_briefs b
+                JOIN signals s ON s.id = b.signal_id
+                WHERE b.id = ?
+                """,
+                (brief_id,),
+            ).fetchone()
+        return self._decode_brief(row) if row else None
+
+    def list_briefs(
+        self,
+        ticker: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        clauses = []
+        params: List[Any] = []
+        if ticker:
+            clauses.append("b.ticker = ?")
+            params.append(normalize_ticker(ticker))
+        if status and status != "all":
+            clauses.append("b.status = ?")
+            params.append(status)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT b.*, s.title AS signal_title, s.summary AS signal_summary
+                FROM creative_briefs b
+                JOIN signals s ON s.id = b.signal_id
+                {where_sql}
+                ORDER BY b.created_at DESC, b.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._decode_brief(r) for r in rows]
+
+    @staticmethod
+    def _decode_brief(row: sqlite3.Row) -> Dict[str, Any]:
+        views = row["views_48h"]
+        followers = row["follower_baseline"]
+        breakout_ratio = round(views / followers, 2) if (views and followers and followers > 0) else None
+        shares = row["shares_48h"]
+        likes = row["likes_48h"]
+        share_to_like = round((shares / likes) * 100.0, 1) if (shares is not None and likes and likes > 0) else None
+        return {
+            "id": row["id"],
+            "signal_id": row["signal_id"],
+            "signal_title": row["signal_title"],
+            "signal_summary": row["signal_summary"],
+            "ticker": row["ticker"],
+            "sector": row["sector"],
+            "target_platform": row["target_platform"],
+            "angle": row["angle"],
+            "hook_2s": row["hook_2s"],
+            "on_screen_text": row["on_screen_text"],
+            "caption": row["caption"],
+            "edit_beats": json.loads(row["edit_beats_json"]),
+            "audio_cue": row["audio_cue"],
+            "model_used": row["model_used"],
+            "status": row["status"],
+            "account_handle": row["account_handle"],
+            "posted_url": row["posted_url"],
+            "views_48h": views,
+            "likes_48h": likes,
+            "shares_48h": shares,
+            "saves_48h": row["saves_48h"],
+            "comments_48h": row["comments_48h"],
+            "follower_baseline": followers,
+            "breakout_ratio": breakout_ratio,
+            "share_to_like_pct": share_to_like,
+            "verdict": row["verdict"],
+            "outcome_notes": row["outcome_notes"],
+            "created_at": row["created_at"],
+            "graded_at": row["graded_at"],
         }
