@@ -2,14 +2,34 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "ipx_terminal.db"
 DEFAULT_EXPORT_DIR = PROJECT_ROOT / "exports" / "ipx-eval"
 DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "schemas" / "eval_case.schema.json"
+
+
+def load_dotenv(dotenv_path: Optional[Path] = None) -> None:
+    """Load KEY=VALUE pairs from local .env without overriding existing environment variables."""
+    path = dotenv_path or (PROJECT_ROOT / ".env")
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_dotenv()
 
 # Exact IPX-Eval contract enums (kept 1:1 with eval_case.schema.json)
 VALID_CATEGORIES: Tuple[str, ...] = ("breakout", "lineage", "contagion", "ip_catalyst")
