@@ -325,8 +325,12 @@ function renderDesk() {
     const exportBar = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">
         <span style="font-family:monospace;font-size:11px;color:#94a3b8">CREATIVE BRIEFS &amp; CONTENT FACTORY FEEDBACK (${state.briefs.length})</span>
-        <button type="button" class="btn-action amber" id="btn-export-creative">Export Winner/Flop A/B Pairs</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn-action cyan" id="btn-auto-ab-creator">+ Auto-Pair Creator A/B</button>
+          <button type="button" class="btn-action amber" id="btn-export-creative">Export Winner/Flop A/B Pairs</button>
+        </div>
       </div>
+      ${state.lastAutoAb ? `<div style="font-family:monospace;font-size:11px;color:#22d3ee;margin-bottom:8px">✓ ScrapeCreators fetched ${state.lastAutoAb.posts_fetched} posts for ${esc(state.lastAutoAb.handle)} (${esc(state.lastAutoAb.platform)}) → built ${state.lastAutoAb.pairs_created} blind A/B pairs → ${esc(state.lastAutoAb.out_path || "none")}</div>` : ""}
       ${state.lastCreativeExport ? `<div style="font-family:monospace;font-size:11px;color:#34d399;margin-bottom:8px">✓ Exported ${state.lastCreativeExport.graded_count} graded briefs &amp; ${state.lastCreativeExport.pairs_exported} blind A/B pairs → ${esc(state.lastCreativeExport.out_dir)}</div>` : ""}
     `;
     const cards = state.briefs.length
@@ -372,6 +376,9 @@ function renderDesk() {
         const brief = state.briefs.find((x) => x.id === Number(btn.dataset.gradeBrief));
         if (brief) openGradeBriefModal(brief);
       });
+    });
+    document.getElementById("btn-auto-ab-creator").addEventListener("click", () => {
+      openAutoAbModal();
     });
     document.getElementById("btn-export-creative").addEventListener("click", async () => {
       try {
@@ -528,6 +535,75 @@ function openPasteUrlModal() {
       setStatus(`Auto-ingested #${res.signal.id} [${res.signal.ticker}] -> ${res.signal.title}`);
     } catch (err) {
       setStatus(`URL ingest error: ${err.message}`, true);
+    }
+  });
+}
+
+function openAutoAbModal() {
+  openModal(
+    "1-CLICK CREATOR AUTO-PAIRER (SCRAPECREATORS → IPX-EVAL v0.5-creative)",
+    `
+    <form id="form-auto-ab">
+      <div style="font-size:11.5px;color:#94a3b8;margin-bottom:10px">
+        Enter any creator handle. ScrapeCreators pulls their recent posts, pairs their top breakout winners vs. bottom flops (50/50 balanced, metrics stripped), and saves directly into <code>IPX-Eval/datasets/v0.5-creative/</code>.
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>PLATFORM</label>
+          <select name="platform">
+            <option>TikTok</option>
+            <option>YouTube Shorts</option>
+            <option>Instagram Reels</option>
+            <option>X</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>CREATOR HANDLE</label>
+          <input name="handle" required placeholder="@handle (without URL)" />
+        </div>
+        <div class="form-row">
+          <label>SECTOR</label>
+          <select name="sector">
+            <option>CREATORS</option><option>MUSIC</option><option>POP</option><option>FILM_TV</option><option>GAMING</option><option>SPORTS</option><option>DEALS</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>MAX BLIND A/B PAIRS</label>
+          <input name="max_pairs" type="number" min="1" max="15" value="5" />
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button type="button" class="btn-action" id="cancel-auto-ab">Cancel</button>
+        <button type="submit" class="btn-action cyan" id="submit-auto-ab">Fetch &amp; Build Blind A/B Pairs</button>
+      </div>
+    </form>
+    `
+  );
+  document.getElementById("cancel-auto-ab").addEventListener("click", closeModal);
+  document.getElementById("form-auto-ab").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submit-auto-ab");
+    btn.disabled = true;
+    btn.textContent = "Fetching via ScrapeCreators...";
+    try {
+      const fd = new FormData(e.target);
+      const res = await api("/api/briefs/auto-ab", {
+        method: "POST",
+        body: JSON.stringify({
+          platform: fd.get("platform"),
+          handle: fd.get("handle"),
+          sector: fd.get("sector"),
+          max_pairs: Number(fd.get("max_pairs") || 5),
+        }),
+      });
+      state.lastAutoAb = res;
+      closeModal();
+      setStatus(`Built ${res.pairs_created} blind A/B pairs from ${res.posts_fetched} posts for ${res.handle} (${res.platform})`);
+      renderDesk();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Fetch & Build Blind A/B Pairs";
+      setStatus(err.message, true);
     }
   });
 }

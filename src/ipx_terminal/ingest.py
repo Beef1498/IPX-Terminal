@@ -6,13 +6,15 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
 import os
+from pathlib import Path
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from ipx_terminal.config import DEFAULT_EXPORT_DIR, PROJECT_ROOT
 from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.scoring import utc_now_iso
 
@@ -26,6 +28,14 @@ SCRAPECREATORS_ENDPOINTS: Dict[str, str] = {
     "X": "/v1/twitter/tweet",
     "Facebook": "/v1/facebook/post",
     "Facebook Reels": "/v1/facebook/post",
+}
+SCRAPECREATORS_CREATOR_ENDPOINTS: Dict[str, List[str]] = {
+    "TikTok": ["/v3/tiktok/profile/videos"],
+    "YouTube Shorts": ["/v1/youtube/channel/shorts", "/v1/youtube/channel-videos"],
+    "YouTube": ["/v1/youtube/channel-videos", "/v1/youtube/channel/shorts"],
+    "Instagram Reels": ["/v1/instagram/user/reels", "/v2/instagram/user/posts"],
+    "Instagram": ["/v2/instagram/user/posts", "/v1/instagram/user/reels"],
+    "X": ["/v1/twitter/user-tweets"],
 }
 
 
@@ -229,6 +239,338 @@ def fetch_scrapecreators_url(
     req_url = f"{base_url.rstrip('/')}{endpoint}?{urllib.parse.urlencode({'url': clean_url})}"
     payload = _http_get_json(req_url, timeout=timeout, headers={"x-api-key": key})
     return _parse_scrapecreators_payload(platform=platform, payload=payload, url=clean_url)
+
+
+def _extract_creator_post_items(platform: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract raw list of post/video dicts from ScrapeCreators profile/channel responses."""
+    candidate_lists: List[Any] = [
+        payload.get("aweme_list"),
+        payload.get("videos"),
+        payload.get("shorts"),
+        payload.get("items"),
+        payload.get("posts"),
+        payload.get("tweets"),
+        payload.get("data"),
+        _nested_get(payload, "data", "items"),
+        _nested_get(payload, "data", "videos"),
+        _nested_get(payload, "data", "posts"),
+        _nested_get(payload, "data", "tweets"),
+    ]
+    for item in candidate_lists:
+        if isinstance(item, list) and item:
+            return [x for x in item if isinstance(x, dict)]
+    return []
+
+
+def _normalize_creator_post(platform: str, item: Dict[str, Any], handle: str) -> Optional[Dict[str, Any]]:
+    """Normalize a single creator feed post from ScrapeCreators into a comparable record."""
+    raw = item.get("media") if isinstance(item.get("media"), dict) else item
+    raw = raw.get("node") if isinstance(raw.get("node"), dict) else raw
+
+    title = ""
+    caption = ""
+    url = ""
+    audio_cue = ""
+    views: Optional[int] = None
+    likes: Optional[int] = None
+    shares: Optional[int] = None
+    comments: Optional[int] = None
+    bookmarks: Optional[int] = None
+    followers: Optional[int] = None
+
+    if platform == "TikTok":
+        stats = raw.get("statistics") if isinstance(raw.get("statistics"), dict) else raw
+        author_obj = raw.get("author") if isinstance(raw.get("author"), dict) else {}
+        music_obj = raw.get("music") if isinstance(raw.get("music"), dict) else {}
+        caption = _first_str(raw.get("desc"), raw.get("title"), raw.get("caption"))
+        title = caption[:140]
+        audio_cue = _first_str(music_obj.get("title"), music_obj.get("author"), "Original sound")
+        url = _first_str(raw.get("url"), raw.get("share_url"))
+        if not url and raw.get("aweme_id"):
+            url = f"https://www.tiktok.com/@{handle}/video/{raw['aweme_id']}"
+        views = _first_int(stats.get("play_count"), stats.get("views"), raw.get("play_count"))
+        likes = _first_int(stats.get("digg_count"), stats.get("likes"), raw.get("digg_count"))
+        shares = _first_int(stats.get("share_count"), stats.get("shares"), raw.get("share_count"))
+        comments = _first_int(stats.get("comment_count"), stats.get("comments"), raw.get("comment_count"))
+        bookmarks = _first_int(stats.get("collect_count"), stats.get("bookmarks"), raw.get("collect_count"))
+        followers = _first_int(author_obj.get("follower_count"), _nested_get(author_obj, "stats", "followerCount"))
+    elif platform in ("YouTube", "YouTube Shorts"):
+        title = _first_str(raw.get("title"), raw.get("name"))
+        caption = _first_str(raw.get("description"), title)
+        vid = _first_str(raw.get("id"), raw.get("videoId"))
+        url = _first_str(raw.get("url"))
+        if not url and vid:
+            url = (
+                f"https://www.youtube.com/shorts/{vid}"
+                if platform == "YouTube Shorts"
+                else f"https://www.youtube.com/watch?v={vid}"
+            )
+        views = _first_int(raw.get("viewCountInt"), raw.get("viewCount"), raw.get("views"))
+        likes = _first_int(raw.get("likeCountInt"), raw.get("likeCount"), raw.get("likes"))
+        comments = _first_int(raw.get("commentCountInt"), raw.get("commentCount"), raw.get("comments"))
+        audio_cue = _first_str(raw.get("lengthText"), "YouTube native audio")
+    elif platform in ("Instagram", "Instagram Reels"):
+        cap_obj = raw.get("caption")
+        cap_text = cap_obj.get("text") if isinstance(cap_obj, dict) else cap_obj
+        cap_edges = _nested_get(raw, "edge_media_to_caption", "edges")
+        if not cap_text and isinstance(cap_edges, list) and cap_edges:
+            cap_text = _nested_get(cap_edges[0], "node", "text")
+        caption = _first_str(cap_text, raw.get("title"), raw.get("accessibility_caption"))
+        title = caption[:140]
+        code = _first_str(raw.get("code"), raw.get("shortcode"))
+        url = _first_str(raw.get("url"))
+        if not url and code:
+            url = f"https://www.instagram.com/reel/{code}/"
+        views = _first_int(raw.get("play_count"), raw.get("video_play_count"), raw.get("video_view_count"), raw.get("view_count"))
+        likes = _first_int(raw.get("like_count"), _nested_get(raw, "edge_media_preview_like", "count"))
+        comments = _first_int(raw.get("comment_count"), _nested_get(raw, "edge_media_to_comment", "count"))
+        shares = _first_int(raw.get("reshare_count"), raw.get("share_count"))
+        music_info = _nested_get(raw, "clips_metadata", "music_info", "music_asset_info") or {}
+        audio_cue = _first_str(music_info.get("title") if isinstance(music_info, dict) else "", "Reels audio")
+    elif platform == "X":
+        legacy = raw.get("legacy") if isinstance(raw.get("legacy"), dict) else raw
+        caption = _first_str(legacy.get("full_text"), raw.get("text"), raw.get("full_text"))
+        title = caption[:140]
+        tid = _first_str(raw.get("rest_id"), legacy.get("id_str"), raw.get("id"))
+        url = _first_str(raw.get("url"))
+        if not url and tid:
+            url = f"https://x.com/{handle}/status/{tid}"
+        views = _first_int(_nested_get(raw, "views", "count"), raw.get("view_count"), raw.get("views"))
+        likes = _first_int(legacy.get("favorite_count"), raw.get("like_count"), raw.get("likes"))
+        shares = _first_int(legacy.get("retweet_count"), raw.get("retweet_count"), raw.get("reposts"))
+        comments = _first_int(legacy.get("reply_count"), raw.get("reply_count"), raw.get("replies"))
+        bookmarks = _first_int(legacy.get("bookmark_count"), raw.get("bookmark_count"), raw.get("bookmarks"))
+        audio_cue = "X native post / video"
+
+    if not (title or caption):
+        return None
+    perf_score = views if views is not None else ((likes or 0) + 3 * (shares or 0) + (comments or 0))
+    if perf_score <= 0:
+        return None
+
+    return {
+        "platform": platform,
+        "handle": f"@{handle.lstrip('@')}",
+        "url": url,
+        "title": title or caption[:140],
+        "caption": caption or title,
+        "audio_cue": audio_cue or f"{platform} native audio",
+        "views": views,
+        "likes": likes,
+        "shares": shares,
+        "comments": comments,
+        "bookmarks": bookmarks,
+        "followers": followers,
+        "perf_score": perf_score,
+        "perf_metric_name": "views" if views is not None else "weighted_engagement",
+    }
+
+
+def fetch_scrapecreators_creator_posts(
+    platform: str,
+    handle: str,
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+    timeout: int = 25,
+) -> List[Dict[str, Any]]:
+    """Fetch recent public posts for a creator handle via ScrapeCreators API."""
+    clean_handle = handle.strip().lstrip("@").strip("/")
+    if not clean_handle:
+        raise ValueError("Creator handle is required")
+    endpoints = SCRAPECREATORS_CREATOR_ENDPOINTS.get(platform)
+    if not endpoints:
+        raise ValueError(f"Creator auto-pairer does not support platform '{platform}'")
+
+    key = (api_key if api_key is not None else os.environ.get("SCRAPECREATORS_API_KEY", "")).strip()
+    if not key:
+        raise ValueError("SCRAPECREATORS_API_KEY is required for Creator Auto-Pairer")
+
+    last_err: Optional[Exception] = None
+    for endpoint in endpoints:
+        req_url = f"{base_url.rstrip('/')}{endpoint}?{urllib.parse.urlencode({'handle': clean_handle})}"
+        try:
+            payload = _http_get_json(req_url, timeout=timeout, headers={"x-api-key": key})
+            raw_items = _extract_creator_post_items(platform, payload)
+            posts = []
+            for item in raw_items:
+                norm = _normalize_creator_post(platform, item, clean_handle)
+                if norm:
+                    posts.append(norm)
+            if posts:
+                return posts
+        except Exception as exc:
+            last_err = exc
+            continue
+
+    if last_err:
+        raise RuntimeError(f"ScrapeCreators creator fetch failed for @{clean_handle} on {platform}: {last_err}") from last_err
+    return []
+
+
+def build_creator_ab_pairs(
+    posts: Sequence[Dict[str, Any]],
+    platform: str,
+    handle: str,
+    sector: str = "CREATORS",
+    max_pairs: int = 5,
+    min_ratio: float = 2.0,
+    version: str = "0.5",
+    start_id: int = 101,
+) -> List[Dict[str, Any]]:
+    """Build balanced 50/50 zero-leakage IPX-Eval creative_ab pairs from one creator's winners vs flops."""
+    ranked = sorted(posts, key=lambda p: float(p.get("perf_score") or 0), reverse=True)
+    if len(ranked) < 2:
+        return []
+
+    clean_handle = f"@{handle.strip().lstrip('@')}"
+    ticker = normalize_ticker(clean_handle.lstrip("@")[:10])
+    captured_at = utc_now_iso()
+    half = len(ranked) // 2
+    winners_pool = ranked[:half]
+    flops_pool = list(reversed(ranked[half:]))
+
+    pairs: List[Dict[str, Any]] = []
+    pair_num = 0
+    for w, f in zip(winners_pool, flops_pool):
+        if len(pairs) >= max_pairs:
+            break
+        w_score = float(w["perf_score"])
+        f_score = max(1.0, float(f["perf_score"]))
+        ratio = round(w_score / f_score, 2)
+        if ratio < min_ratio:
+            continue
+
+        def _blind_candidate(post: Dict[str, Any]) -> Dict[str, Any]:
+            # Strictly strip views/likes/shares/comments/perf_score (zero leakage!)
+            return {
+                "ticker": ticker,
+                "creator_handle": clean_handle,
+                "platform": platform,
+                "title": post["title"],
+                "caption": post["caption"],
+                "audio_cue": post.get("audio_cue", ""),
+            }
+
+        # Deterministic 50/50 A/B balance so naive position-guessing gets 50%
+        winner_is_a = (pair_num % 2 == 0)
+        cand_a = _blind_candidate(w if winner_is_a else f)
+        cand_b = _blind_candidate(f if winner_is_a else w)
+        winner_label = "a" if winner_is_a else "b"
+        metric_name = w.get("perf_metric_name", "views")
+
+        case_id = f"ipx-creative_ab-{start_id + pair_num:03d}"
+        pairs.append(
+            {
+                "id": case_id,
+                "version": str(version),
+                "category": "creative_ab",
+                "sector": sector,
+                "title": f"Same-Creator Blind A/B ({clean_handle} on {platform}) #{pair_num + 1}",
+                "captured_at": captured_at,
+                "source": "content_factory_feedback",
+                "difficulty": "hard",
+                "signal_snapshot": {
+                    "summary": (
+                        f"Same-creator blind A/B test for {clean_handle} on {platform}. "
+                        "Both posts were published by the exact same account with comparable audience size; "
+                        "all post-publication metrics are hidden."
+                    ),
+                    "platforms": [platform],
+                    "metrics": {
+                        "candidate_a": cand_a,
+                        "candidate_b": cand_b,
+                    },
+                    "samples": [
+                        f"Candidate A ({clean_handle}): {cand_a['caption'][:200]}",
+                        f"Candidate B ({clean_handle}): {cand_b['caption'][:200]}",
+                    ],
+                    "entities_mentioned": [clean_handle, ticker, platform],
+                },
+                "question": (
+                    f"Both posts were published by the same creator ({clean_handle}) on {platform}, "
+                    "with all engagement metrics hidden. Pick which post outperformed (a or b) and explain "
+                    "why its hook, framing, curiosity gap, or shareability drove higher reach."
+                ),
+                "ground_truth": {
+                    "label": winner_label,
+                    "secondary_label": f"same_creator_{ratio}x_gap",
+                    "required_concepts": [
+                        ["hook", "curiosity", "framing", "opener", "angle", "specific"],
+                        ["share", "retention", "engagement", "caption", "relatable", "scroll"],
+                    ],
+                    "rationale": (
+                        f"Real ScrapeCreators ground truth for {clean_handle} on {platform}: "
+                        f"Candidate {winner_label.upper()} outperformed by {ratio}x on {metric_name} "
+                        f"({int(w_score):,} vs {int(f_score):,}). "
+                        f"Winner URL: {w.get('url', '')} | Flop URL: {f.get('url', '')}"
+                    ).strip(),
+                    "outcome_window_hours": 48,
+                },
+            }
+        )
+        pair_num += 1
+
+    return pairs
+
+
+def auto_pair_creator_ab(
+    platform: str,
+    handle: str,
+    sector: str = "CREATORS",
+    max_pairs: int = 5,
+    min_ratio: float = 2.0,
+    out_dir: Optional[Path] = None,
+    version: str = "0.5",
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+) -> Dict[str, Any]:
+    """1-click ScrapeCreators creator fetch -> balanced blind Winner-vs-Flop JSONL export."""
+    posts = fetch_scrapecreators_creator_posts(
+        platform=platform,
+        handle=handle,
+        api_key=api_key,
+        base_url=base_url,
+    )
+    sibling_eval_dir = PROJECT_ROOT.parent / "IPX-Eval" / "datasets" / "v0.5-creative"
+    target_dir = Path(out_dir) if out_dir else (sibling_eval_dir if sibling_eval_dir.parent.exists() else (DEFAULT_EXPORT_DIR / "creative-feedback"))
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pick a non-colliding starting ID based on existing creative_ab cases in target_dir
+    max_existing = 100
+    for existing_file in target_dir.glob("*.jsonl"):
+        for line in existing_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            m = re.search(r'"id"\s*:\s*"ipx-creative_ab-(\d+)"', line)
+            if m:
+                max_existing = max(max_existing, int(m.group(1)))
+
+    pairs = build_creator_ab_pairs(
+        posts=posts,
+        platform=platform,
+        handle=handle,
+        sector=sector,
+        max_pairs=max_pairs,
+        min_ratio=min_ratio,
+        version=version,
+        start_id=max_existing + 1,
+    )
+
+    slug_plat = re.sub(r"[^a-z0-9]+", "_", platform.lower()).strip("_")
+    slug_handle = re.sub(r"[^a-z0-9]+", "_", handle.lower().lstrip("@")).strip("_") or "creator"
+    out_path = target_dir / f"creator_{slug_plat}_{slug_handle}.jsonl"
+    if pairs:
+        out_path.write_text(
+            "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs) + "\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "platform": platform,
+        "handle": f"@{handle.strip().lstrip('@')}",
+        "posts_fetched": len(posts),
+        "pairs_created": len(pairs),
+        "out_path": str(out_path) if pairs else None,
+        "pairs": pairs,
+    }
 
 
 class _MetaHTMLParser(HTMLParser):

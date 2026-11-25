@@ -30,6 +30,7 @@ from ipx_terminal.ai_scorer import (
 from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_jsonl, parse_concepts_text
 from ipx_terminal.ingest import (
+    auto_pair_creator_ab,
     ingest_gdelt,
     ingest_url,
     recheck_prediction_metrics,
@@ -409,6 +410,19 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     out_dir = Path(body["out_dir"]) if body.get("out_dir") else (DEFAULT_EXPORT_DIR / "creative-feedback")
                     version = str(body.get("version", "0.5"))
                     result = export_creative_feedback(db=db, out_dir=out_dir, version=version)
+                    self._send_json({"ok": True, **result})
+                    return
+
+                if path == "/api/briefs/auto-ab":
+                    result = auto_pair_creator_ab(
+                        platform=str(body.get("platform", "TikTok")),
+                        handle=str(body["handle"]),
+                        sector=str(body.get("sector", "CREATORS")),
+                        max_pairs=int(body.get("max_pairs", 5)),
+                        min_ratio=float(body.get("min_ratio", 2.0)),
+                        out_dir=Path(body["out_dir"]) if body.get("out_dir") else None,
+                        version=str(body.get("version", "0.5")),
+                    )
                     self._send_json({"ok": True, **result})
                     return
 

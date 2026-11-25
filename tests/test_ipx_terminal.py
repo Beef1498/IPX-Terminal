@@ -351,6 +351,38 @@ class TestIPXTerminal(unittest.TestCase):
         # High CVS entity should have been prioritized first
         self.assertIn("High+Entity", call_log[0])
 
+    def test_creator_auto_ab_pairer_balanced_and_zero_leakage(self) -> None:
+        from ipx_terminal.ingest import auto_pair_creator_ab
+
+        fake_tiktok_feed = {
+            "aweme_list": [
+                {"aweme_id": "1", "desc": "Winner 1 deadpan hook", "statistics": {"play_count": 900000, "digg_count": 80000}},
+                {"aweme_id": "2", "desc": "Winner 2 instant reveal", "statistics": {"play_count": 650000, "digg_count": 50000}},
+                {"aweme_id": "3", "desc": "Flop 2 slow intro", "statistics": {"play_count": 12000, "digg_count": 400}},
+                {"aweme_id": "4", "desc": "Flop 1 generic promo", "statistics": {"play_count": 8000, "digg_count": 200}},
+            ]
+        }
+        out_dir = Path(self._tmp.name) / "v05"
+        with mock.patch("ipx_terminal.ingest._http_get_json", return_value=fake_tiktok_feed):
+            res = auto_pair_creator_ab(
+                platform="TikTok",
+                handle="@testcreator",
+                max_pairs=2,
+                out_dir=out_dir,
+                api_key="test-sc-key",
+            )
+        self.assertEqual(res["posts_fetched"], 4)
+        self.assertEqual(res["pairs_created"], 2)
+        labels = [p["ground_truth"]["label"] for p in res["pairs"]]
+        self.assertEqual(labels, ["a", "b"])
+        # Zero leakage: metrics must be stripped from candidates
+        for p in res["pairs"]:
+            for side in ("candidate_a", "candidate_b"):
+                cand = p["signal_snapshot"]["metrics"][side]
+                self.assertNotIn("views", cand)
+                self.assertNotIn("likes", cand)
+                self.assertNotIn("perf_score", cand)
+
 
 if __name__ == "__main__":
     unittest.main()

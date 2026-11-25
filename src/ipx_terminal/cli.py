@@ -19,6 +19,7 @@ from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, score_
 from ipx_terminal.db import TerminalDB
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
 from ipx_terminal.ingest import (
+    auto_pair_creator_ab,
     ingest_gdelt,
     ingest_url,
     ingest_youtube,
@@ -104,6 +105,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_rec.add_argument("--prediction-id", type=int, required=True)
     p_rec.add_argument("--api-key", default=None, help="Optional ScrapeCreators API key (defaults to SCRAPECREATORS_API_KEY).")
+
+    p_aab = sub.add_parser(
+        "auto-ab",
+        help="1-click ScrapeCreators creator fetch -> balanced blind Winner-vs-Flop A/B JSONL for IPX-Eval v0.5-creative.",
+    )
+    p_aab.add_argument("--platform", default="TikTok", choices=("TikTok", "YouTube Shorts", "YouTube", "Instagram Reels", "Instagram", "X"))
+    p_aab.add_argument("--handle", required=True, help="Creator handle (e.g. @mrbeast or handle without @).")
+    p_aab.add_argument("--sector", default="CREATORS", choices=VALID_SECTORS)
+    p_aab.add_argument("--pairs", type=int, default=5, help="Max blind Winner-vs-Flop pairs to build (default: 5).")
+    p_aab.add_argument("--min-ratio", type=float, default=2.0, help="Min winner/flop performance multiplier (default: 2.0).")
+    p_aab.add_argument("--out-dir", type=Path, default=None, help="Output directory (defaults to IPX-Eval/datasets/v0.5-creative).")
 
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
@@ -318,6 +330,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             for err in result["errors"]:
                 print(f"  ! {err}")
             return 1
+        return 0
+
+    if args.command == "auto-ab":
+        res = auto_pair_creator_ab(
+            platform=args.platform,
+            handle=args.handle,
+            sector=args.sector,
+            max_pairs=args.pairs,
+            min_ratio=args.min_ratio,
+            out_dir=args.out_dir,
+        )
+        print(
+            f"Fetched {res['posts_fetched']} posts for {res['handle']} ({res['platform']}) -> "
+            f"built {res['pairs_created']} blind A/B pairs"
+        )
+        if res["out_path"]:
+            print(f"Saved -> {res['out_path']}")
         return 0
 
     if args.command == "serve":
