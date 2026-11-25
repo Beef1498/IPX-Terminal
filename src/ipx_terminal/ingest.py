@@ -14,6 +14,221 @@ import urllib.parse
 import urllib.request
 
 from ipx_terminal.db import TerminalDB, normalize_ticker
+from ipx_terminal.scoring import utc_now_iso
+
+DEFAULT_SCRAPECREATORS_BASE_URL = "https://api.scrapecreators.com"
+SCRAPECREATORS_ENDPOINTS: Dict[str, str] = {
+    "TikTok": "/v2/tiktok/video",
+    "Instagram": "/v1/instagram/post",
+    "Instagram Reels": "/v1/instagram/post",
+    "YouTube": "/v1/youtube/video",
+    "YouTube Shorts": "/v1/youtube/video",
+    "X": "/v1/twitter/tweet",
+    "Facebook": "/v1/facebook/post",
+    "Facebook Reels": "/v1/facebook/post",
+}
+
+
+def _opt_int(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    cleaned = str(value).strip().replace(",", "")
+    if not cleaned:
+        return None
+    try:
+        return int(float(cleaned))
+    except ValueError:
+        return None
+
+
+def _first_int(*values: Any) -> Optional[int]:
+    for val in values:
+        parsed = _opt_int(val)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _first_str(*values: Any) -> str:
+    for val in values:
+        if isinstance(val, str) and val.strip():
+            return " ".join(val.split()).strip()
+    return ""
+
+
+def _nested_get(obj: Any, *keys: str) -> Any:
+    cur = obj
+    for key in keys:
+        if isinstance(cur, dict):
+            cur = cur.get(key)
+        else:
+            return None
+    return cur
+
+
+def _parse_scrapecreators_payload(platform: str, payload: Dict[str, Any], url: str) -> Dict[str, Any]:
+    """Normalize ScrapeCreators JSON responses across TikTok, IG, YouTube, X, and Facebook."""
+    title = ""
+    author = ""
+    description = ""
+    views: Optional[int] = None
+    likes: Optional[int] = None
+    shares: Optional[int] = None
+    comments: Optional[int] = None
+    bookmarks: Optional[int] = None
+    followers: Optional[int] = None
+
+    if platform == "TikTok":
+        detail = payload.get("aweme_detail") if isinstance(payload.get("aweme_detail"), dict) else payload
+        stats = detail.get("statistics") if isinstance(detail.get("statistics"), dict) else detail
+        author_obj = detail.get("author") if isinstance(detail.get("author"), dict) else {}
+        description = _first_str(detail.get("desc"), payload.get("desc"), payload.get("title"))
+        title = description[:160] if description else ""
+        author = _first_str(author_obj.get("unique_id"), author_obj.get("nickname"), payload.get("author"))
+        views = _first_int(stats.get("play_count"), stats.get("views"), payload.get("play_count"))
+        likes = _first_int(stats.get("digg_count"), stats.get("likes"), payload.get("digg_count"))
+        shares = _first_int(stats.get("share_count"), stats.get("shares"), payload.get("share_count"))
+        comments = _first_int(stats.get("comment_count"), stats.get("comments"), payload.get("comment_count"))
+        bookmarks = _first_int(stats.get("collect_count"), stats.get("bookmarks"), payload.get("collect_count"))
+        followers = _first_int(
+            author_obj.get("follower_count"),
+            _nested_get(author_obj, "stats", "followerCount"),
+            payload.get("follower_count"),
+        )
+    elif platform in ("Instagram", "Instagram Reels"):
+        media = (
+            _nested_get(payload, "data", "xdt_shortcode_media")
+            or payload.get("data")
+            or payload
+        )
+        if not isinstance(media, dict):
+            media = payload
+        owner = media.get("owner") if isinstance(media.get("owner"), dict) else {}
+        caption_edges = _nested_get(media, "edge_media_to_caption", "edges")
+        caption_text = ""
+        if isinstance(caption_edges, list) and caption_edges:
+            caption_text = _first_str(_nested_get(caption_edges[0], "node", "text"))
+        description = _first_str(caption_text, media.get("caption"), payload.get("caption"))
+        title = description[:160] if description else ""
+        author = _first_str(owner.get("username"), owner.get("full_name"), payload.get("username"))
+        views = _first_int(
+            media.get("video_play_count"),
+            media.get("video_view_count"),
+            media.get("play_count"),
+            payload.get("play_count"),
+        )
+        likes = _first_int(
+            _nested_get(media, "edge_media_preview_like", "count"),
+            media.get("like_count"),
+            payload.get("like_count"),
+        )
+        comments = _first_int(
+            _nested_get(media, "edge_media_to_parent_comment", "count"),
+            _nested_get(media, "edge_media_to_comment", "count"),
+            media.get("comment_count"),
+            payload.get("comment_count"),
+        )
+        shares = _first_int(media.get("reshare_count"), media.get("share_count"), payload.get("share_count"))
+        followers = _first_int(
+            _nested_get(owner, "edge_followed_by", "count"),
+            owner.get("follower_count"),
+            payload.get("follower_count"),
+        )
+    elif platform in ("YouTube", "YouTube Shorts"):
+        channel = payload.get("channel") if isinstance(payload.get("channel"), dict) else {}
+        title = _first_str(payload.get("title"), payload.get("name"))
+        description = _first_str(payload.get("description"), title)
+        author = _first_str(channel.get("title"), channel.get("handle"), payload.get("channelTitle"), payload.get("author"))
+        views = _first_int(payload.get("viewCountInt"), payload.get("viewCount"), payload.get("views"))
+        likes = _first_int(payload.get("likeCountInt"), payload.get("likeCount"), payload.get("likes"))
+        comments = _first_int(payload.get("commentCountInt"), payload.get("commentCount"), payload.get("comments"))
+        followers = _first_int(
+            channel.get("subscriberCountInt"),
+            channel.get("subscriberCount"),
+            payload.get("subscriberCountInt"),
+            payload.get("subscriberCount"),
+        )
+    elif platform == "X":
+        legacy = payload.get("legacy") if isinstance(payload.get("legacy"), dict) else payload
+        user_legacy = (
+            _nested_get(payload, "core", "user_results", "result", "legacy")
+            or payload.get("author")
+            or {}
+        )
+        if not isinstance(user_legacy, dict):
+            user_legacy = {}
+        description = _first_str(legacy.get("full_text"), payload.get("text"), payload.get("full_text"))
+        title = description[:160] if description else ""
+        author = _first_str(user_legacy.get("screen_name"), user_legacy.get("name"), payload.get("username"))
+        views = _first_int(_nested_get(payload, "views", "count"), payload.get("view_count"), payload.get("views"))
+        likes = _first_int(legacy.get("favorite_count"), payload.get("like_count"), payload.get("likes"))
+        shares = _first_int(legacy.get("retweet_count"), payload.get("retweet_count"), payload.get("reposts"))
+        comments = _first_int(legacy.get("reply_count"), payload.get("reply_count"), payload.get("replies"))
+        bookmarks = _first_int(legacy.get("bookmark_count"), payload.get("bookmark_count"), payload.get("bookmarks"))
+        followers = _first_int(user_legacy.get("followers_count"), payload.get("followers_count"))
+    elif platform in ("Facebook", "Facebook Reels"):
+        author_obj = payload.get("author") if isinstance(payload.get("author"), dict) else {}
+        description = _first_str(payload.get("message"), payload.get("text"), payload.get("description"), payload.get("title"))
+        title = _first_str(payload.get("title"), description[:160])
+        author = _first_str(author_obj.get("name"), payload.get("author_name"), payload.get("page_name"))
+        views = _first_int(payload.get("play_count"), payload.get("video_view_count"), payload.get("views"))
+        likes = _first_int(payload.get("reaction_count"), payload.get("like_count"), payload.get("likes"))
+        shares = _first_int(payload.get("share_count"), payload.get("shares"))
+        comments = _first_int(payload.get("comment_count"), payload.get("comments"))
+        followers = _first_int(author_obj.get("followers_count"), payload.get("followers_count"))
+
+    metrics: Dict[str, Any] = {"url": url, "enrichment_provider": "scrapecreators"}
+    if views is not None:
+        metrics["views"] = views
+    if likes is not None:
+        metrics["likes"] = likes
+    if shares is not None:
+        metrics["shares"] = shares
+    if comments is not None:
+        metrics["comments"] = comments
+    if bookmarks is not None:
+        metrics["bookmarks"] = bookmarks
+    if followers is not None:
+        key = "creator_subscribers" if platform in ("YouTube", "YouTube Shorts") else "creator_followers"
+        metrics[key] = followers
+    if views and followers and followers > 0:
+        metrics["breakout_ratio_views_to_followers"] = round(views / followers, 2)
+    if shares and likes and likes > 0:
+        metrics["share_to_like_ratio"] = round(shares / likes, 4)
+
+    samples = [description[:220]] if description else []
+    return {
+        "platform": platform,
+        "title": title[:160] if title else "",
+        "author": author,
+        "description": description,
+        "metrics": metrics,
+        "samples": samples,
+    }
+
+
+def fetch_scrapecreators_url(
+    url: str,
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+    timeout: int = 20,
+) -> Dict[str, Any]:
+    """Fetch structured social metrics for a post/video URL via ScrapeCreators API."""
+    clean_url = url.strip()
+    platform = _detect_platform_from_url(clean_url)
+    endpoint = SCRAPECREATORS_ENDPOINTS.get(platform)
+    if not endpoint:
+        raise ValueError(f"ScrapeCreators URL enrichment does not support platform '{platform}'")
+
+    key = (api_key if api_key is not None else os.environ.get("SCRAPECREATORS_API_KEY", "")).strip()
+    if not key:
+        raise ValueError("SCRAPECREATORS_API_KEY is required for ScrapeCreators enrichment")
+
+    req_url = f"{base_url.rstrip('/')}{endpoint}?{urllib.parse.urlencode({'url': clean_url})}"
+    payload = _http_get_json(req_url, timeout=timeout, headers={"x-api-key": key})
+    return _parse_scrapecreators_payload(platform=platform, payload=payload, url=clean_url)
 
 
 class _MetaHTMLParser(HTMLParser):
@@ -85,8 +300,12 @@ def _http_get_text(url: str, timeout: int = 12) -> str:
         return resp.read(250_000).decode("utf-8", errors="replace")
 
 
-def extract_url_metadata(url: str) -> Dict[str, Any]:
-    """Extract structured t_0 metadata from a social/web URL using oEmbed + HTML meta tags."""
+def extract_url_metadata(
+    url: str,
+    scrapecreators_api_key: Optional[str] = None,
+    use_scrapecreators: bool = True,
+) -> Dict[str, Any]:
+    """Extract structured t_0 metadata from a social/web URL using ScrapeCreators (when configured), oEmbed, and HTML meta tags."""
     clean_url = url.strip()
     if not clean_url.startswith(("http://", "https://")):
         raise ValueError("URL must start with http:// or https://")
@@ -98,21 +317,43 @@ def extract_url_metadata(url: str) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {"url": clean_url}
     samples: List[str] = []
 
-    # 1. Try public oEmbed first for YouTube, TikTok, and X (fast, reliable, zero API key)
+    # 0. Optional ScrapeCreators enrichment when SCRAPECREATORS_API_KEY is available
+    sc_key = (
+        scrapecreators_api_key
+        if scrapecreators_api_key is not None
+        else os.environ.get("SCRAPECREATORS_API_KEY", "")
+    ).strip()
+    if use_scrapecreators and sc_key and platform in SCRAPECREATORS_ENDPOINTS:
+        try:
+            sc = fetch_scrapecreators_url(clean_url, api_key=sc_key)
+            title = sc["title"]
+            author = sc["author"]
+            description = sc["description"]
+            metrics.update(sc["metrics"])
+            for s in sc["samples"]:
+                if s and s not in samples:
+                    samples.append(s)
+        except Exception:
+            pass
+
+    # 1. Try public oEmbed for YouTube, TikTok, and X (fast, reliable, zero API key)
     oembed_url = None
-    if platform in ("YouTube", "YouTube Shorts"):
-        oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(clean_url, safe='')}&format=json"
-    elif platform == "TikTok":
-        oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
-    elif platform == "X":
-        oembed_url = f"https://publish.twitter.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
+    if not title or not author:
+        if platform in ("YouTube", "YouTube Shorts"):
+            oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(clean_url, safe='')}&format=json"
+        elif platform == "TikTok":
+            oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
+        elif platform == "X":
+            oembed_url = f"https://publish.twitter.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
 
     if oembed_url:
         try:
             oe = _http_get_json(oembed_url, timeout=10)
-            title = str(oe.get("title") or "").strip()
-            author = str(oe.get("author_name") or "").strip()
-            if oe.get("html") and platform == "X":
+            if not title:
+                title = str(oe.get("title") or "").strip()
+            if not author:
+                author = str(oe.get("author_name") or "").strip()
+            if oe.get("html") and platform == "X" and not description:
                 text_only = re.sub(r"<[^>]+>", " ", str(oe["html"]))
                 text_only = " ".join(text_only.split()).strip()
                 if text_only:
@@ -122,28 +363,29 @@ def extract_url_metadata(url: str) -> Dict[str, Any]:
             pass
 
     # 2. Fetch HTML meta tags / public view counts as enrichment or fallback
-    try:
-        html = _http_get_text(clean_url, timeout=12)
-        parser = _MetaHTMLParser()
-        parser.feed(html)
-        if not title:
-            title = parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.page_title
-        if not description:
-            description = (
-                parser.meta.get("og:description")
-                or parser.meta.get("description")
-                or parser.meta.get("twitter:description")
-                or ""
-            )
-        # Extract public YouTube viewCount if present in page JSON
-        vc = re.search(r'"viewCount"\s*:\s*"?(\d+)"?', html)
-        if vc:
-            metrics["views"] = int(vc.group(1))
-        ic = re.search(r'"interactionCount"\s*:\s*"?(\d+)"?', html)
-        if ic and "views" not in metrics:
-            metrics["views"] = int(ic.group(1))
-    except Exception:
-        pass
+    if not title or ("views" not in metrics and "likes" not in metrics):
+        try:
+            html = _http_get_text(clean_url, timeout=12)
+            parser = _MetaHTMLParser()
+            parser.feed(html)
+            if not title:
+                title = parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.page_title
+            if not description:
+                description = (
+                    parser.meta.get("og:description")
+                    or parser.meta.get("description")
+                    or parser.meta.get("twitter:description")
+                    or ""
+                )
+            # Extract public YouTube viewCount if present in page JSON
+            vc = re.search(r'"viewCount"\s*:\s*"?(\d+)"?', html)
+            if vc and "views" not in metrics:
+                metrics["views"] = int(vc.group(1))
+            ic = re.search(r'"interactionCount"\s*:\s*"?(\d+)"?', html)
+            if ic and "views" not in metrics:
+                metrics["views"] = int(ic.group(1))
+        except Exception:
+            pass
 
     if not title:
         title = f"{platform} signal — {clean_url[:60]}"
@@ -156,8 +398,17 @@ def extract_url_metadata(url: str) -> Dict[str, Any]:
     summary_parts.append(f"titled '{title}'.")
     if description and description != title:
         summary_parts.append(description[:320])
+    stat_bits = []
     if "views" in metrics:
-        summary_parts.append(f"Observed views at t_0: {metrics['views']:,}.")
+        stat_bits.append(f"{metrics['views']:,} views")
+    if "likes" in metrics:
+        stat_bits.append(f"{metrics['likes']:,} likes")
+    if "shares" in metrics:
+        stat_bits.append(f"{metrics['shares']:,} shares")
+    if "comments" in metrics:
+        stat_bits.append(f"{metrics['comments']:,} comments")
+    if stat_bits:
+        summary_parts.append(f"Observed at t_0: {', '.join(stat_bits)}.")
 
     return {
         "platform": platform,
@@ -166,6 +417,75 @@ def extract_url_metadata(url: str) -> Dict[str, Any]:
         "summary": " ".join(summary_parts).strip(),
         "metrics": metrics,
         "samples": samples[:3],
+    }
+
+
+def recheck_prediction_metrics(
+    db: TerminalDB,
+    prediction_id: int,
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+) -> Dict[str, Any]:
+    """Re-fetch live social metrics for a logged prediction's URL to aid 48-72h resolution without mutating t_0."""
+    pred = db.get_prediction(prediction_id)
+    if not pred:
+        raise ValueError(f"Prediction #{prediction_id} not found")
+
+    t0_metrics = dict(pred.get("signal_snapshot", {}).get("metrics") or {})
+    url = str(t0_metrics.get("url") or "").strip()
+    if not url:
+        sig = db.get_signal(pred["signal_id"])
+        url = str((sig or {}).get("url") or "").strip()
+    if not url:
+        raise ValueError(f"Prediction #{prediction_id} ({pred['case_code']}) has no tracked URL to re-check")
+
+    sc_key = (api_key if api_key is not None else os.environ.get("SCRAPECREATORS_API_KEY", "")).strip()
+    platform = _detect_platform_from_url(url)
+    if sc_key and platform in SCRAPECREATORS_ENDPOINTS:
+        fetched = fetch_scrapecreators_url(url, api_key=sc_key, base_url=base_url)
+        provider = "scrapecreators"
+    else:
+        fetched = extract_url_metadata(url, scrapecreators_api_key="", use_scrapecreators=False)
+        provider = "oembed_html"
+
+    current_metrics = dict(fetched.get("metrics") or {})
+    deltas: Dict[str, Any] = {}
+    suggested_outcome_metrics: Dict[str, Any] = {
+        "checked_at": utc_now_iso(),
+        "provider": provider,
+    }
+    for key in ("views", "likes", "shares", "comments", "bookmarks"):
+        now_val = _opt_int(current_metrics.get(key))
+        t0_val = _opt_int(t0_metrics.get(key))
+        if now_val is not None:
+            suggested_outcome_metrics[f"{key}_now"] = now_val
+            if t0_val is not None:
+                delta = now_val - t0_val
+                deltas[f"{key}_delta"] = delta
+                suggested_outcome_metrics[f"{key}_delta"] = delta
+                if t0_val > 0:
+                    mult = round(now_val / t0_val, 2)
+                    deltas[f"{key}_multiplier"] = mult
+                    suggested_outcome_metrics[f"{key}_multiplier"] = mult
+    if "share_to_like_ratio" in current_metrics:
+        suggested_outcome_metrics["share_to_like_ratio_now"] = current_metrics["share_to_like_ratio"]
+    if "breakout_ratio_views_to_followers" in current_metrics:
+        suggested_outcome_metrics["breakout_ratio_now"] = current_metrics["breakout_ratio_views_to_followers"]
+
+    return {
+        "prediction_id": pred["id"],
+        "case_code": pred["case_code"],
+        "ticker": pred["ticker"],
+        "status": pred["status"],
+        "due_at": pred["due_at"],
+        "overdue": pred["overdue"],
+        "url": url,
+        "platform": platform,
+        "provider": provider,
+        "t0_metrics": t0_metrics,
+        "current_metrics": current_metrics,
+        "deltas": deltas,
+        "suggested_outcome_metrics": suggested_outcome_metrics,
     }
 
 
@@ -213,22 +533,40 @@ def sweep_watchlist(
     tickers: Optional[List[str]] = None,
     timespan: str = "24h",
     max_records: int = 8,
-    delay_sec: float = 5.5,
+    delay_sec: float = 6.5,
+    limit: int = 5,
+    skip_empty: bool = True,
+    max_retries: int = 2,
 ) -> Dict[str, Any]:
     """Run polite rate-limited GDELT sweeps across watchlist entities and report overdue 48-72h predictions."""
     entities = db.list_entities()
     if tickers:
         wanted = {normalize_ticker(t) for t in tickers}
         entities = [e for e in entities if e["ticker"] in wanted]
+    else:
+        # Prioritize top CVS movers that haven't been GDELT-swept most recently so sweeps rotate across the watchlist
+        cvs_by_ticker = {m["ticker"]: float(m.get("cvs_score") or 0.0) for m in db.get_top_movers(limit=250)}
+        last_gdelt_by_ticker: Dict[str, str] = {}
+        for sig in db.list_signals(limit=250):
+            if sig.get("source_type") == "gdelt" and sig["ticker"] not in last_gdelt_by_ticker:
+                last_gdelt_by_ticker[sig["ticker"]] = str(sig.get("captured_at") or "")
+        entities.sort(
+            key=lambda e: (
+                last_gdelt_by_ticker.get(e["ticker"], ""),
+                -cvs_by_ticker.get(e["ticker"], 0.0),
+                e["ticker"],
+            )
+        )
 
     ingested: List[Dict[str, Any]] = []
+    skipped_empty: List[str] = []
     errors: List[str] = []
-    targets = entities[:5]
+    targets = entities[: max(1, limit)] if not tickers else entities
     for idx, ent in enumerate(targets):
         if idx > 0 and delay_sec > 0:
             time.sleep(delay_sec)
         query = f'"{ent["name"].split("—")[0].strip()}"'
-        for attempt in range(2):
+        for attempt in range(max_retries + 1):
             try:
                 sig = ingest_gdelt(
                     db=db,
@@ -239,12 +577,23 @@ def sweep_watchlist(
                     owner_holder=ent["owner_holder"],
                     max_records=max_records,
                     timespan=timespan,
+                    skip_if_empty=skip_empty,
                 )
-                ingested.append({"ticker": ent["ticker"], "signal_id": sig["id"], "cvs": sig["cvs_score"]})
+                if sig is None:
+                    skipped_empty.append(ent["ticker"])
+                else:
+                    ingested.append({"ticker": ent["ticker"], "signal_id": sig["id"], "cvs": sig["cvs_score"]})
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt == 0:
-                    time.sleep(max(6.0, delay_sec * 1.5))
+                if exc.code == 429 and attempt < max_retries:
+                    backoff = max(10.0, delay_sec * (1.8 ** (attempt + 1)))
+                    time.sleep(backoff)
+                    continue
+                errors.append(f"{ent['ticker']}: {exc}")
+                break
+            except (urllib.error.URLError, ConnectionResetError, TimeoutError) as exc:
+                if attempt < max_retries:
+                    time.sleep(max(4.0, delay_sec))
                     continue
                 errors.append(f"{ent['ticker']}: {exc}")
                 break
@@ -256,6 +605,7 @@ def sweep_watchlist(
     return {
         "swept_count": len(ingested),
         "ingested": ingested,
+        "skipped_empty": skipped_empty,
         "errors": errors,
         "overdue_predictions": [
             {"id": p["id"], "case_code": p["case_code"], "ticker": p["ticker"], "due_at": p["due_at"]}
@@ -264,11 +614,15 @@ def sweep_watchlist(
     }
 
 
-def _http_get_json(url: str, timeout: int = 15) -> Dict[str, Any]:
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "IPX-Terminal/0.1 (+https://ipx-terminal.local)"},
-    )
+def _http_get_json(
+    url: str,
+    timeout: int = 15,
+    headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    req_headers = {"User-Agent": "IPX-Terminal/0.1 (+https://ipx-terminal.local)"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, headers=req_headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -282,7 +636,8 @@ def ingest_gdelt(
     owner_holder: str = "Independent / Unknown",
     max_records: int = 12,
     timespan: str = "24h",
-) -> Dict[str, Any]:
+    skip_if_empty: bool = False,
+) -> Optional[Dict[str, Any]]:
     """Ingest live global news signals from GDELT DOC 2.0 API into a t_0 signal snapshot."""
     params = urllib.parse.urlencode(
         {
@@ -297,6 +652,8 @@ def ingest_gdelt(
     url = f"https://api.gdeltproject.org/api/v2/doc/doc?{params}"
     payload = _http_get_json(url)
     articles = payload.get("articles") or []
+    if skip_if_empty and not articles:
+        return None
 
     domains = sorted({a.get("domain", "") for a in articles if a.get("domain")})
     titles = [a.get("title", "").strip() for a in articles if a.get("title")]

@@ -18,7 +18,14 @@ from ipx_terminal.config import (
 from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, score_signal_with_ai
 from ipx_terminal.db import TerminalDB
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
-from ipx_terminal.ingest import ingest_gdelt, ingest_url, ingest_youtube, seed_demo_workspace, sweep_watchlist
+from ipx_terminal.ingest import (
+    ingest_gdelt,
+    ingest_url,
+    ingest_youtube,
+    recheck_prediction_metrics,
+    seed_demo_workspace,
+    sweep_watchlist,
+)
 from ipx_terminal.server import run_server
 
 
@@ -82,6 +89,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_swp = sub.add_parser("sweep", help="Sweep GDELT across watchlist entities and report overdue 48-72h calls.")
     p_swp.add_argument("--timespan", default="24h")
     p_swp.add_argument("--max-records", type=int, default=8)
+    p_swp.add_argument("--limit", type=int, default=5, help="Max watchlist entities to sweep per run.")
+    p_swp.add_argument("--delay", type=float, default=6.5, help="Delay in seconds between GDELT requests.")
+    p_swp.add_argument("--tickers", default=None, help="Optional comma-separated tickers to sweep.")
+    p_swp.add_argument(
+        "--include-empty",
+        action="store_true",
+        help="Also insert 0-article GDELT signals (skipped by default to avoid CVS artifacts).",
+    )
+
+    p_rec = sub.add_parser(
+        "recheck",
+        help="Re-fetch live social metrics for a logged prediction URL (uses SCRAPECREATORS_API_KEY when set).",
+    )
+    p_rec.add_argument("--prediction-id", type=int, required=True)
+    p_rec.add_argument("--api-key", default=None, help="Optional ScrapeCreators API key (defaults to SCRAPECREATORS_API_KEY).")
 
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
@@ -214,7 +236,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "sweep":
-        res = sweep_watchlist(db=db, timespan=args.timespan, max_records=args.max_records)
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
+        res = sweep_watchlist(
+            db=db,
+            tickers=tickers,
+            timespan=args.timespan,
+            max_records=args.max_records,
+            delay_sec=args.delay,
+            limit=args.limit,
+            skip_empty=not args.include_empty,
+        )
+        print(json.dumps(res, indent=2))
+        return 0
+
+    if args.command == "recheck":
+        res = recheck_prediction_metrics(
+            db=db,
+            prediction_id=args.prediction_id,
+            api_key=args.api_key,
+        )
         print(json.dumps(res, indent=2))
         return 0
 

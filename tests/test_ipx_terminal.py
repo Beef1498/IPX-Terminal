@@ -7,6 +7,8 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest import mock
+import urllib.error
 import urllib.request
 
 from ipx_terminal.ai_scorer import _extract_json_object, generate_creative_brief
@@ -17,7 +19,14 @@ from ipx_terminal.exporter import (
     parse_concepts_text,
     validate_eval_case,
 )
-from ipx_terminal.ingest import _detect_platform_from_url, seed_demo_workspace
+from ipx_terminal.ingest import (
+    _detect_platform_from_url,
+    _parse_scrapecreators_payload,
+    extract_url_metadata,
+    recheck_prediction_metrics,
+    seed_demo_workspace,
+    sweep_watchlist,
+)
 from ipx_terminal.scoring import compute_velocity_and_contagion
 from ipx_terminal.server import create_server, parse_command_bar
 
@@ -227,6 +236,120 @@ class TestIPXTerminal(unittest.TestCase):
         # Ensure metrics are stripped from blind candidates!
         self.assertNotIn("views_48h", pair_line["candidate_a"])
         self.assertEqual(pair_line["ground_truth"]["winner"], "A")
+
+    def test_scrapecreators_normalization_enrichment_and_recheck(self) -> None:
+        tiktok_payload = {
+            "aweme_detail": {
+                "desc": "When someone asks me about my husband's work ethic",
+                "author": {"unique_id": "jcrow73", "follower_count": 15000},
+                "statistics": {
+                    "play_count": 900000,
+                    "digg_count": 80000,
+                    "share_count": 36000,
+                    "comment_count": 500,
+                    "collect_count": 6200,
+                },
+            }
+        }
+        parsed = _parse_scrapecreators_payload(
+            platform="TikTok",
+            payload=tiktok_payload,
+            url="https://www.tiktok.com/@jcrow73/video/7701835190682881293",
+        )
+        self.assertEqual(parsed["author"], "jcrow73")
+        self.assertEqual(parsed["metrics"]["views"], 900000)
+        self.assertEqual(parsed["metrics"]["likes"], 80000)
+        self.assertEqual(parsed["metrics"]["shares"], 36000)
+        self.assertEqual(parsed["metrics"]["bookmarks"], 6200)
+        self.assertEqual(parsed["metrics"]["creator_followers"], 15000)
+        self.assertEqual(parsed["metrics"]["share_to_like_ratio"], 0.45)
+        self.assertEqual(parsed["metrics"]["breakout_ratio_views_to_followers"], 60.0)
+        self.assertEqual(parsed["metrics"]["enrichment_provider"], "scrapecreators")
+
+        # extract_url_metadata should use ScrapeCreators when key is provided
+        with mock.patch("ipx_terminal.ingest._http_get_json", return_value=tiktok_payload) as mock_get:
+            meta = extract_url_metadata(
+                "https://www.tiktok.com/@jcrow73/video/7701835190682881293",
+                scrapecreators_api_key="test-sc-key",
+            )
+            self.assertEqual(meta["metrics"]["views"], 900000)
+            self.assertEqual(meta["metrics"]["enrichment_provider"], "scrapecreators")
+            called_url = mock_get.call_args[0][0]
+            called_headers = mock_get.call_args[1]["headers"]
+            self.assertIn("/v2/tiktok/video?", called_url)
+            self.assertEqual(called_headers["x-api-key"], "test-sc-key")
+
+        # recheck_prediction_metrics should compute deltas without mutating frozen t_0 snapshot
+        sig = self.db.insert_signal(
+            ticker="KATT.FMT",
+            title="Katt Williams CapCut template",
+            summary="Early snapshot.",
+            platforms=["TikTok"],
+            metrics={"views": 300000, "likes": 40000, "shares": 18000, "url": "https://www.tiktok.com/@jcrow73/video/7701835190682881293"},
+            url="https://www.tiktok.com/@jcrow73/video/7701835190682881293",
+            sector="CREATORS",
+        )
+        pred = self.db.create_prediction(
+            signal_id=sig["id"],
+            category="breakout",
+            predicted_label="breakout",
+            confidence=0.88,
+            outcome_window_hours=48,
+        )
+        with mock.patch("ipx_terminal.ingest._http_get_json", return_value=tiktok_payload):
+            recheck = recheck_prediction_metrics(self.db, pred["id"], api_key="test-sc-key")
+        self.assertEqual(recheck["provider"], "scrapecreators")
+        self.assertEqual(recheck["deltas"]["views_delta"], 600000)
+        self.assertEqual(recheck["deltas"]["views_multiplier"], 3.0)
+        self.assertEqual(recheck["deltas"]["likes_delta"], 40000)
+        # Verify t_0 snapshot remained frozen
+        stored = self.db.get_prediction(pred["id"])
+        self.assertEqual(stored["signal_snapshot"]["metrics"]["views"], 300000)
+
+    def test_sweep_watchlist_skips_empty_rotates_and_retries_429(self) -> None:
+        self.db.insert_signal(
+            ticker="LOW.IP",
+            title="Low CVS ticker",
+            summary="Quiet signal.",
+            platforms=["X"],
+            metrics={"likes": 100},
+            sector="POP",
+            entity_name="Low Entity",
+        )
+        self.db.insert_signal(
+            ticker="HIGH.IP",
+            title="High CVS ticker",
+            summary="Big cross-platform breakout.",
+            platforms=["TikTok", "Spotify", "Google Trends"],
+            metrics={"breakout_ratio_views_to_followers": 10.0, "google_trends_index": 70},
+            sector="MUSIC",
+            entity_name="High Entity",
+        )
+
+        call_log = []
+
+        def fake_get_json(url: str, timeout: int = 15, headers=None):
+            call_log.append(url)
+            if "High+Entity" in url:
+                if len([u for u in call_log if "High+Entity" in u]) == 1:
+                    raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+                return {
+                    "articles": [
+                        {"title": "High Entity breaks out", "domain": "variety.com", "language": "English", "url": "https://variety.com/1"}
+                    ]
+                }
+            # Low Entity returns 0 articles -> should be skipped when skip_empty=True
+            return {"articles": []}
+
+        with mock.patch("ipx_terminal.ingest._http_get_json", side_effect=fake_get_json), mock.patch("ipx_terminal.ingest.time.sleep"):
+            res = sweep_watchlist(self.db, limit=2, delay_sec=0.0, skip_empty=True, max_retries=1)
+
+        self.assertEqual(res["swept_count"], 1)
+        self.assertEqual(res["ingested"][0]["ticker"], "HIGH.IP")
+        self.assertEqual(res["skipped_empty"], ["LOW.IP"])
+        self.assertEqual(res["errors"], [])
+        # High CVS entity should have been prioritized first
+        self.assertIn("High+Entity", call_log[0])
 
 
 if __name__ == "__main__":

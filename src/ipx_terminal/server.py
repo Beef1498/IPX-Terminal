@@ -29,7 +29,13 @@ from ipx_terminal.ai_scorer import (
 )
 from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_jsonl, parse_concepts_text
-from ipx_terminal.ingest import ingest_gdelt, ingest_url, seed_demo_workspace, sweep_watchlist
+from ipx_terminal.ingest import (
+    ingest_gdelt,
+    ingest_url,
+    recheck_prediction_metrics,
+    seed_demo_workspace,
+    sweep_watchlist,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -257,6 +263,9 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         tickers=body.get("tickers"),
                         timespan=str(body.get("timespan", "24h")),
                         max_records=int(body.get("max_records", 8)),
+                        delay_sec=float(body.get("delay_sec", 6.5)),
+                        limit=int(body.get("limit", 5)),
+                        skip_empty=bool(body.get("skip_empty", True)),
                     )
                     self._send_json({"ok": True, **result})
                     return
@@ -299,6 +308,17 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         ai_reasoning=body.get("ai_reasoning") or None,
                     )
                     self._send_json({"ok": True, "prediction": pred}, status=HTTPStatus.CREATED)
+                    return
+
+                if path.startswith("/api/predictions/") and path.endswith("/recheck"):
+                    pred_id_str = path[len("/api/predictions/") : -len("/recheck")].strip("/")
+                    pred_id = int(pred_id_str)
+                    result = recheck_prediction_metrics(
+                        db=db,
+                        prediction_id=pred_id,
+                        api_key=body.get("api_key") or None,
+                    )
+                    self._send_json({"ok": True, **result})
                     return
 
                 if path.startswith("/api/predictions/") and path.endswith("/resolve"):
