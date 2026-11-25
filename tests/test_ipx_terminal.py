@@ -9,9 +9,10 @@ import threading
 import unittest
 import urllib.request
 
+from ipx_terminal.ai_scorer import _extract_json_object
 from ipx_terminal.db import TerminalDB
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text, validate_eval_case
-from ipx_terminal.ingest import seed_demo_workspace
+from ipx_terminal.ingest import _detect_platform_from_url, seed_demo_workspace
 from ipx_terminal.scoring import compute_velocity_and_contagion
 from ipx_terminal.server import create_server, parse_command_bar
 
@@ -123,6 +124,43 @@ class TestIPXTerminal(unittest.TestCase):
         )
         self.assertEqual(exp["total_exported"], 4)
         self.assertEqual(exp["errors"], [])
+
+    def test_url_platform_detection_and_human_vs_ai_tracking(self) -> None:
+        self.assertEqual(_detect_platform_from_url("https://www.youtube.com/shorts/O8P8iXzWlzQ"), "YouTube Shorts")
+        self.assertEqual(_detect_platform_from_url("https://www.tiktok.com/@jcrow73/video/123"), "TikTok")
+        self.assertEqual(_detect_platform_from_url("https://x.com/greghunkins/status/123"), "X")
+
+        parsed = _extract_json_object("<thought>reasoning</thought>```json\n{\"label\": \"breakout\", \"confidence\": 0.85}\n```")
+        self.assertEqual(parsed["label"], "breakout")
+
+        sig = self.db.insert_signal(
+            ticker="AI.TEST",
+            title="Human vs AI test",
+            summary="Test signal for side-by-side grading.",
+            platforms=["TikTok"],
+            sector="POP",
+        )
+        pred = self.db.create_prediction(
+            signal_id=sig["id"],
+            category="breakout",
+            predicted_label="breakout",
+            confidence=0.85,
+            ai_model="gemini-3.5-flash-lite",
+            ai_predicted_label="noise",
+            ai_confidence=0.72,
+            ai_reasoning="Model missed share-to-like velocity.",
+        )
+        resolved = self.db.resolve_prediction(
+            prediction_id=pred["id"],
+            ground_truth_label="breakout",
+            required_concepts=["share-to-like"],
+            rationale="Human beat AI on real breakout.",
+        )
+        self.assertTrue(resolved["outcome"]["prediction_correct"])
+        self.assertFalse(resolved["ai_prediction"]["correct"])
+        stats = self.db.get_dashboard_stats()
+        self.assertEqual(stats["prediction_accuracy_pct"], 100.0)
+        self.assertEqual(stats["ai_accuracy_pct"], 0.0)
 
 
 if __name__ == "__main__":

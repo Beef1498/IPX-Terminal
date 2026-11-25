@@ -120,6 +120,20 @@ class TerminalDB:
     def init_db(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            # Safe schema migration for Human vs. AI prediction columns on existing DBs
+            cols = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(predictions)").fetchall()
+            }
+            migrations = [
+                ("ai_model", "TEXT"),
+                ("ai_predicted_label", "TEXT"),
+                ("ai_confidence", "REAL"),
+                ("ai_reasoning", "TEXT"),
+            ]
+            for col_name, col_type in migrations:
+                if col_name not in cols:
+                    conn.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type}")
 
     # ------------------------------------------------------------------
     # Entities (Entity-Resolution IP Graph)
@@ -384,6 +398,10 @@ class TerminalDB:
         outcome_window_hours: Optional[int] = 48,
         analyst_notes: str = "",
         case_code: Optional[str] = None,
+        ai_model: Optional[str] = None,
+        ai_predicted_label: Optional[str] = None,
+        ai_confidence: Optional[float] = None,
+        ai_reasoning: Optional[str] = None,
     ) -> Dict[str, Any]:
         if category not in VALID_CATEGORIES:
             raise ValueError(f"Invalid category '{category}'. Expected one of {VALID_CATEGORIES}")
@@ -427,9 +445,10 @@ class TerminalDB:
                 INSERT INTO predictions (
                     case_code, signal_id, ticker, category, sector, title, captured_at,
                     source, difficulty, question, predicted_label, confidence, analyst_notes,
-                    outcome_window_hours, due_at, status, frozen_snapshot_json, created_at
+                    outcome_window_hours, due_at, status, frozen_snapshot_json, created_at,
+                    ai_model, ai_predicted_label, ai_confidence, ai_reasoning
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     code,
@@ -449,6 +468,10 @@ class TerminalDB:
                     due_at,
                     json.dumps(frozen_snapshot),
                     now,
+                    ai_model.strip() if ai_model else None,
+                    ai_predicted_label.strip() if ai_predicted_label else None,
+                    float(ai_confidence) if ai_confidence is not None else None,
+                    ai_reasoning.strip() if ai_reasoning else None,
                 ),
             )
             pred_id = cur.lastrowid
@@ -607,6 +630,21 @@ class TerminalDB:
             except ValueError:
                 overdue = False
 
+        ai_prediction = None
+        if row["ai_predicted_label"]:
+            ai_correct = (
+                bool(row["ai_predicted_label"] == row["ground_truth_label"])
+                if row["ground_truth_label"] is not None
+                else None
+            )
+            ai_prediction = {
+                "model": row["ai_model"],
+                "label": row["ai_predicted_label"],
+                "confidence": row["ai_confidence"],
+                "reasoning": row["ai_reasoning"] or "",
+                "correct": ai_correct,
+            }
+
         return {
             "id": row["id"],
             "case_code": row["case_code"],
@@ -627,6 +665,7 @@ class TerminalDB:
             "overdue": overdue,
             "status": row["status"],
             "signal_snapshot": json.loads(row["frozen_snapshot_json"]),
+            "ai_prediction": ai_prediction,
             "outcome": outcome,
             "created_at": row["created_at"],
         }
@@ -692,10 +731,26 @@ class TerminalDB:
             correct_count = conn.execute(
                 "SELECT COUNT(*) FROM outcomes WHERE prediction_correct = 1"
             ).fetchone()[0]
+            ai_resolved = conn.execute(
+                """
+                SELECT COUNT(*) FROM predictions p
+                JOIN outcomes o ON o.prediction_id = p.id
+                WHERE p.ai_predicted_label IS NOT NULL
+                """
+            ).fetchone()[0]
+            ai_correct = conn.execute(
+                """
+                SELECT COUNT(*) FROM predictions p
+                JOIN outcomes o ON o.prediction_id = p.id
+                WHERE p.ai_predicted_label IS NOT NULL
+                  AND p.ai_predicted_label = o.ground_truth_label
+                """
+            ).fetchone()[0]
 
         preds = self.list_predictions(status="pending", limit=200)
         overdue_count = sum(1 for p in preds if p["overdue"])
         accuracy = round((correct_count / resolved_count) * 100.0, 1) if resolved_count else None
+        ai_accuracy = round((ai_correct / ai_resolved) * 100.0, 1) if ai_resolved else None
         return {
             "entities": entity_count,
             "signals": signal_count,
@@ -703,4 +758,6 @@ class TerminalDB:
             "overdue_predictions": overdue_count,
             "resolved_predictions": resolved_count,
             "prediction_accuracy_pct": accuracy,
+            "ai_resolved_predictions": ai_resolved,
+            "ai_accuracy_pct": ai_accuracy,
         }

@@ -30,14 +30,16 @@
       <div class="kpi" title="Time-stamped t₀ cross-platform signal snapshots captured before outcomes are known."><span class="kpi-label">SIGNALS</span><span class="kpi-val" id="kpi-signals">0</span></div>
       <div class="kpi" title="Logged predictions waiting on their 48-72h real-world outcome window."><span class="kpi-label">PENDING 48-72H</span><span class="kpi-val amber" id="kpi-pending">0</span></div>
       <div class="kpi" title="Verified ground-truth outcomes ready to export into IPX-Eval."><span class="kpi-label">RESOLVED</span><span class="kpi-val green" id="kpi-resolved">0</span></div>
-      <div class="kpi" title="Percentage of resolved predictions where the initial t₀ call matched the verified 48-72h outcome."><span class="kpi-label">HIT RATE</span><span class="kpi-val cyan" id="kpi-accuracy">--</span></div>
+      <div class="kpi" title="Percentage of resolved predictions where your t₀ call matched the verified 48-72h outcome."><span class="kpi-label">HIT RATE</span><span class="kpi-val cyan" id="kpi-accuracy">--</span></div>
+      <div class="kpi" title="Percentage of AI-scored resolved predictions where the model matched the verified 48-72h outcome."><span class="kpi-label">AI HIT</span><span class="kpi-val" style="color:#a78bfa" id="kpi-ai-accuracy">--</span></div>
     </div>
   </header>
 
   <nav class="sector-bar">
     <div class="sector-keys" id="sector-keys"></div>
     <div class="toolbar-actions">
-      <button type="button" class="btn-action" id="btn-open-capture">+ Capture t₀ Signal</button>
+      <button type="button" class="btn-action green" id="btn-open-url">+ Paste URL</button>
+      <button type="button" class="btn-action" id="btn-open-capture">+ Manual t₀</button>
       <button type="button" class="btn-action cyan" id="btn-open-gdelt">GDELT Sweep</button>
       <button type="button" class="btn-action amber" id="btn-quick-export">Export → IPX-Eval</button>
       <button type="button" class="btn-action help-btn" id="btn-open-help" title="Open Bloomberg-style operator's key & command guide (shortcut: ?)">? HELP</button>

@@ -82,6 +82,10 @@ function renderKpis() {
   document.getElementById("kpi-resolved").textContent = s.resolved_predictions ?? 0;
   document.getElementById("kpi-accuracy").textContent =
     s.prediction_accuracy_pct != null ? `${s.prediction_accuracy_pct}%` : "--";
+  const aiEl = document.getElementById("kpi-ai-accuracy");
+  if (aiEl) {
+    aiEl.textContent = s.ai_accuracy_pct != null ? `${s.ai_accuracy_pct}%` : "--";
+  }
 }
 
 function renderSectorKeys() {
@@ -367,6 +371,12 @@ function renderPredictionCardHtml(p) {
          <span style="font-family:monospace;font-size:10.5px;color:#8b9bb0">Window: ${p.outcome_window_hours ?? "N/A"}h · Due: ${esc((p.due_at || "N/A").slice(0, 16).replace("T", " "))}</span>
          <button type="button" class="btn-action green" data-resolve-pred="${p.id}">Resolve 48-72h Outcome</button>
        </div>`;
+  const aiLine = p.ai_prediction
+    ? `<div style="font-family:monospace;font-size:11px;color:#a78bfa;margin-top:2px">
+         AI (${esc(p.ai_prediction.model || "model")}): <b>${esc(p.ai_prediction.label)}</b> (${Math.round((p.ai_prediction.confidence || 0) * 100)}%)
+         ${p.ai_prediction.correct === true ? "· <span style='color:#34d399'>AI HIT</span>" : p.ai_prediction.correct === false ? "· <span style='color:#fb7185'>AI MISS</span>" : ""}
+       </div>`
+    : "";
   return `
     <div class="pred-card">
       <div class="pred-head">
@@ -374,7 +384,8 @@ function renderPredictionCardHtml(p) {
         <span class="pill ${badgeCls}">${statusTxt}</span>
       </div>
       <div style="font-weight:600;margin-bottom:3px">${esc(p.title)}</div>
-      <div style="font-family:monospace;font-size:11px;color:#94a3b8">Pred: <b>${esc(p.predicted_label)}</b> (${Math.round(p.confidence * 100)}%)</div>
+      <div style="font-family:monospace;font-size:11px;color:#94a3b8">Human: <b>${esc(p.predicted_label)}</b> (${Math.round(p.confidence * 100)}%)</div>
+      ${aiLine}
       ${gtLine}
     </div>
   `;
@@ -397,6 +408,49 @@ function openModal(title, html) {
 }
 function closeModal() {
   document.getElementById("modal-backdrop").classList.add("hidden");
+}
+
+function openPasteUrlModal() {
+  const sectors = (state.config?.sectors || []).map((s) => `<option value="${s}">${s}</option>`).join("");
+  openModal(
+    "PASTE URL — AUTO-INGEST t₀ SIGNAL",
+    `
+    <form id="form-paste-url">
+      <div style="color:#94a3b8;font-size:12px;margin-bottom:10px">
+        Paste any <b>YouTube / Shorts, TikTok, X, Instagram, or News URL</b>. IPX Terminal auto-extracts title, creator, description, and public view counts via oEmbed + OpenGraph.
+      </div>
+      <div class="form-grid">
+        <div class="form-row full"><label>POST OR ARTICLE URL</label><input name="url" type="url" placeholder="https://www.youtube.com/shorts/... or https://www.tiktok.com/..." required /></div>
+        <div class="form-row"><label>TICKER</label><input name="ticker" placeholder="e.g. FAOUZ.UN or NVDA.IP" required /></div>
+        <div class="form-row"><label>SECTOR</label><select name="sector">${sectors}</select></div>
+        <div class="form-row"><label>ENTITY NAME (OPTIONAL)</label><input name="entity_name" placeholder="Auto-filled if blank" /></div>
+        <div class="form-row"><label>RIGHTS HOLDER (OPTIONAL)</label><input name="owner_holder" placeholder="e.g. Warner Music / Independent" /></div>
+        <div class="form-row full"><label>ANALYST NOTE (OPTIONAL)</label><input name="notes" placeholder="e.g. 38 independent edit accounts using this sound in 6h" /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
+        <button type="submit" class="btn-action green">Auto-Ingest t₀ Signal</button>
+      </div>
+    </form>
+  `
+  );
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("form-paste-url").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setStatus("Auto-ingesting URL metadata...");
+    try {
+      const res = await api("/api/ingest/url", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries())),
+      });
+      closeModal();
+      state.activeTicker = res.signal.ticker;
+      await loadBootstrap(true);
+      setStatus(`Auto-ingested #${res.signal.id} [${res.signal.ticker}] -> ${res.signal.title}`);
+    } catch (err) {
+      setStatus(`URL ingest error: ${err.message}`, true);
+    }
+  });
 }
 
 function openCaptureSignalModal() {
@@ -515,6 +569,22 @@ function openLogPredictionModal(signal) {
         <div class="form-row full"><label>ANALYTICAL QUESTION</label><textarea name="question" id="log-question">${esc(defaultQs[initCat] || "")}</textarea></div>
         <div class="form-row full"><label>ANALYST NOTES</label><input name="analyst_notes" placeholder="Why you made this call at t₀..." /></div>
       </div>
+      <div style="background:#0b1017;border:1px solid #2b384b;border-radius:4px;padding:8px 10px;margin:8px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-family:monospace;font-size:11px;color:#a78bfa">HUMAN vs. AI DESK (OPTIONAL)</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="ai-model-input" value="gemini-3.5-flash-lite" style="background:#070a0f;border:1px solid #2b384b;color:#cbd5e1;font-family:monospace;font-size:11px;padding:3px 6px;border-radius:3px;width:165px" />
+            <button type="button" class="btn-action help-btn" id="btn-ask-ai">Ask AI at t₀</button>
+          </div>
+        </div>
+        <div id="ai-score-output" style="font-family:monospace;font-size:11px;color:#8b9bb0;margin-top:6px">
+          Click <b>Ask AI at t₀</b> to record the model's call alongside yours (uses GEMINI_API_KEY or DGX Spark IPX_AI_BASE_URL).
+        </div>
+      </div>
+      <input type="hidden" name="ai_model" id="hd-ai-model" />
+      <input type="hidden" name="ai_predicted_label" id="hd-ai-label" />
+      <input type="hidden" name="ai_confidence" id="hd-ai-conf" />
+      <input type="hidden" name="ai_reasoning" id="hd-ai-reason" />
       <div class="form-actions">
         <button type="button" class="btn-action" id="cancel-modal">Cancel</button>
         <button type="submit" class="btn-action amber">Freeze t₀ Snapshot &amp; Log</button>
@@ -522,6 +592,28 @@ function openLogPredictionModal(signal) {
     </form>
   `
   );
+
+  document.getElementById("btn-ask-ai").addEventListener("click", async () => {
+    const out = document.getElementById("ai-score-output");
+    const cat = document.getElementById("log-cat").value;
+    const question = document.getElementById("log-question").value;
+    const model = document.getElementById("ai-model-input").value.trim() || "gemini-3.5-flash-lite";
+    out.textContent = `Querying ${model} on t₀ snapshot...`;
+    try {
+      const res = await api("/api/ai/score", {
+        method: "POST",
+        body: JSON.stringify({ signal_id: signal.id, category: cat, question, model }),
+      });
+      const ai = res.ai;
+      document.getElementById("hd-ai-model").value = ai.model;
+      document.getElementById("hd-ai-label").value = ai.label;
+      document.getElementById("hd-ai-conf").value = ai.confidence;
+      document.getElementById("hd-ai-reason").value = ai.reasoning;
+      out.innerHTML = `<span style="color:#34d399">✓ ${esc(ai.model)}</span> → <b>${esc(ai.label)}</b> (${Math.round(ai.confidence * 100)}%)<br/><span style="color:#cbd5e1">${esc(ai.reasoning)}</span>`;
+    } catch (err) {
+      out.innerHTML = `<span style="color:#fb7185">${esc(err.message)}</span>`;
+    }
+  });
 
   document.getElementById("log-cat").addEventListener("change", (e) => {
     const cat = e.target.value;
@@ -718,6 +810,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
+document.getElementById("btn-open-url").addEventListener("click", openPasteUrlModal);
 document.getElementById("btn-open-capture").addEventListener("click", openCaptureSignalModal);
 document.getElementById("btn-open-gdelt").addEventListener("click", openGdeltModal);
 document.getElementById("btn-quick-export").addEventListener("click", () => {

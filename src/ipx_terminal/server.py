@@ -21,9 +21,10 @@ from ipx_terminal.config import (
     VALID_SECTORS,
     VALID_SOURCES,
 )
+from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, score_signal_with_ai
 from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
-from ipx_terminal.ingest import ingest_gdelt, seed_demo_workspace
+from ipx_terminal.ingest import ingest_gdelt, ingest_url, seed_demo_workspace, sweep_watchlist
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -227,9 +228,54 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
                     return
 
+                if path == "/api/ingest/url":
+                    extra_metrics = body.get("extra_metrics") or {}
+                    if isinstance(extra_metrics, str):
+                        extra_metrics = json.loads(extra_metrics) if extra_metrics.strip() else {}
+                    sig = ingest_url(
+                        db=db,
+                        url=str(body["url"]),
+                        ticker=str(body["ticker"]),
+                        sector=str(body.get("sector", "POP")),
+                        entity_name=body.get("entity_name") or None,
+                        owner_holder=str(body.get("owner_holder", "Independent / Unknown")),
+                        extra_metrics=extra_metrics,
+                        notes=str(body.get("notes", "")),
+                    )
+                    self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/sweep":
+                    result = sweep_watchlist(
+                        db=db,
+                        tickers=body.get("tickers"),
+                        timespan=str(body.get("timespan", "24h")),
+                        max_records=int(body.get("max_records", 8)),
+                    )
+                    self._send_json({"ok": True, **result})
+                    return
+
+                if path == "/api/ai/score":
+                    sig = db.get_signal(int(body["signal_id"]))
+                    if not sig:
+                        self._send_json({"error": "Signal not found"}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    result = score_signal_with_ai(
+                        signal=sig,
+                        category=str(body["category"]),
+                        question=body.get("question") or None,
+                        api_key=body.get("api_key") or None,
+                        base_url=body.get("base_url") or DEFAULT_AI_BASE_URL,
+                        model=body.get("model") or DEFAULT_AI_MODEL,
+                    )
+                    self._send_json({"ok": True, "ai": result})
+                    return
+
                 if path == "/api/predictions":
                     window_raw = body.get("outcome_window_hours", 48)
                     window_val = None if window_raw in ("", None) else int(window_raw)
+                    ai_conf_raw = body.get("ai_confidence")
+                    ai_conf_val = None if ai_conf_raw in ("", None) else float(ai_conf_raw)
                     pred = db.create_prediction(
                         signal_id=int(body["signal_id"]),
                         category=str(body["category"]),
@@ -241,6 +287,10 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         source=str(body.get("source", "ipx_terminal_export")),
                         outcome_window_hours=window_val,
                         analyst_notes=str(body.get("analyst_notes", "")),
+                        ai_model=body.get("ai_model") or None,
+                        ai_predicted_label=body.get("ai_predicted_label") or None,
+                        ai_confidence=ai_conf_val,
+                        ai_reasoning=body.get("ai_reasoning") or None,
                     )
                     self._send_json({"ok": True, "prediction": pred}, status=HTTPStatus.CREATED)
                     return

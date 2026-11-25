@@ -3,14 +3,251 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from ipx_terminal.db import TerminalDB, normalize_ticker
+
+
+class _MetaHTMLParser(HTMLParser):
+    """Lightweight stdlib HTML title + OpenGraph/meta tag extractor."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_title = False
+        self.title_parts: List[str] = []
+        self.meta: Dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: List[Any]) -> None:
+        tag_l = tag.lower()
+        if tag_l == "title":
+            self.in_title = True
+            return
+        if tag_l == "meta":
+            attr_map = {str(k).lower(): str(v) for k, v in attrs if v is not None}
+            key = (attr_map.get("property") or attr_map.get("name") or "").strip().lower()
+            val = attr_map.get("content", "").strip()
+            if key and val and key not in self.meta:
+                self.meta[key] = val
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self.in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.title_parts.append(data)
+
+    @property
+    def page_title(self) -> str:
+        return " ".join("".join(self.title_parts).split()).strip()
+
+
+def _detect_platform_from_url(url: str) -> str:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    path = urllib.parse.urlparse(url).path.lower()
+    if "youtube.com" in host or "youtu.be" in host:
+        return "YouTube Shorts" if "/shorts/" in path else "YouTube"
+    if "tiktok.com" in host:
+        return "TikTok"
+    if "instagram.com" in host:
+        return "Instagram Reels" if "/reel" in path else "Instagram"
+    if "x.com" in host or "twitter.com" in host:
+        return "X"
+    if "facebook.com" in host or "fb.watch" in host:
+        return "Facebook Reels" if "/reel" in path else "Facebook"
+    if "reddit.com" in host:
+        return "Reddit"
+    if "spotify.com" in host:
+        return "Spotify"
+    return host.replace("www.", "") or "Web"
+
+
+def _http_get_text(url: str, timeout: int = 12) -> str:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read(250_000).decode("utf-8", errors="replace")
+
+
+def extract_url_metadata(url: str) -> Dict[str, Any]:
+    """Extract structured t_0 metadata from a social/web URL using oEmbed + HTML meta tags."""
+    clean_url = url.strip()
+    if not clean_url.startswith(("http://", "https://")):
+        raise ValueError("URL must start with http:// or https://")
+
+    platform = _detect_platform_from_url(clean_url)
+    title = ""
+    author = ""
+    description = ""
+    metrics: Dict[str, Any] = {"url": clean_url}
+    samples: List[str] = []
+
+    # 1. Try public oEmbed first for YouTube, TikTok, and X (fast, reliable, zero API key)
+    oembed_url = None
+    if platform in ("YouTube", "YouTube Shorts"):
+        oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(clean_url, safe='')}&format=json"
+    elif platform == "TikTok":
+        oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
+    elif platform == "X":
+        oembed_url = f"https://publish.twitter.com/oembed?url={urllib.parse.quote(clean_url, safe='')}"
+
+    if oembed_url:
+        try:
+            oe = _http_get_json(oembed_url, timeout=10)
+            title = str(oe.get("title") or "").strip()
+            author = str(oe.get("author_name") or "").strip()
+            if oe.get("html") and platform == "X":
+                text_only = re.sub(r"<[^>]+>", " ", str(oe["html"]))
+                text_only = " ".join(text_only.split()).strip()
+                if text_only:
+                    description = text_only
+                    samples.append(text_only[:220])
+        except Exception:
+            pass
+
+    # 2. Fetch HTML meta tags / public view counts as enrichment or fallback
+    try:
+        html = _http_get_text(clean_url, timeout=12)
+        parser = _MetaHTMLParser()
+        parser.feed(html)
+        if not title:
+            title = parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.page_title
+        if not description:
+            description = (
+                parser.meta.get("og:description")
+                or parser.meta.get("description")
+                or parser.meta.get("twitter:description")
+                or ""
+            )
+        # Extract public YouTube viewCount if present in page JSON
+        vc = re.search(r'"viewCount"\s*:\s*"?(\d+)"?', html)
+        if vc:
+            metrics["views"] = int(vc.group(1))
+        ic = re.search(r'"interactionCount"\s*:\s*"?(\d+)"?', html)
+        if ic and "views" not in metrics:
+            metrics["views"] = int(ic.group(1))
+    except Exception:
+        pass
+
+    if not title:
+        title = f"{platform} signal — {clean_url[:60]}"
+    if description and description not in samples:
+        samples.append(description[:220])
+
+    summary_parts = [f"Auto-captured {platform} signal"]
+    if author:
+        summary_parts.append(f"by {author}")
+    summary_parts.append(f"titled '{title}'.")
+    if description and description != title:
+        summary_parts.append(description[:320])
+    if "views" in metrics:
+        summary_parts.append(f"Observed views at t_0: {metrics['views']:,}.")
+
+    return {
+        "platform": platform,
+        "title": title[:160],
+        "author": author,
+        "summary": " ".join(summary_parts).strip(),
+        "metrics": metrics,
+        "samples": samples[:3],
+    }
+
+
+def ingest_url(
+    db: TerminalDB,
+    url: str,
+    ticker: str,
+    sector: str = "POP",
+    entity_name: Optional[str] = None,
+    owner_holder: str = "Independent / Unknown",
+    extra_metrics: Optional[Dict[str, Any]] = None,
+    notes: str = "",
+) -> Dict[str, Any]:
+    """Auto-extract metadata from a URL and store a scored t_0 signal snapshot."""
+    meta = extract_url_metadata(url)
+    metrics = dict(meta["metrics"])
+    if extra_metrics:
+        metrics.update(extra_metrics)
+    summary = meta["summary"]
+    if notes.strip():
+        summary = f"{summary} Analyst note: {notes.strip()}"
+
+    mentioned = [entity_name or normalize_ticker(ticker)]
+    if meta["author"] and meta["author"] not in mentioned:
+        mentioned.append(meta["author"])
+
+    return db.insert_signal(
+        ticker=ticker,
+        title=meta["title"],
+        summary=summary,
+        platforms=[meta["platform"]],
+        metrics=metrics,
+        samples=meta["samples"],
+        entities_mentioned=mentioned,
+        source_type="url_ingest",
+        url=url.strip(),
+        sector=sector,
+        entity_name=entity_name or meta["author"] or normalize_ticker(ticker),
+        owner_holder=owner_holder,
+    )
+
+
+def sweep_watchlist(
+    db: TerminalDB,
+    tickers: Optional[List[str]] = None,
+    timespan: str = "24h",
+    max_records: int = 8,
+) -> Dict[str, Any]:
+    """Run GDELT sweeps across watchlist entities and report overdue 48-72h predictions."""
+    entities = db.list_entities()
+    if tickers:
+        wanted = {normalize_ticker(t) for t in tickers}
+        entities = [e for e in entities if e["ticker"] in wanted]
+
+    ingested: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    for ent in entities[:5]:
+        query = f'"{ent["name"].split("—")[0].strip()}"'
+        try:
+            sig = ingest_gdelt(
+                db=db,
+                query=query,
+                ticker=ent["ticker"],
+                sector=ent["sector"],
+                entity_name=ent["name"],
+                owner_holder=ent["owner_holder"],
+                max_records=max_records,
+                timespan=timespan,
+            )
+            ingested.append({"ticker": ent["ticker"], "signal_id": sig["id"], "cvs": sig["cvs_score"]})
+        except Exception as exc:
+            errors.append(f"{ent['ticker']}: {exc}")
+
+    overdue = [p for p in db.list_predictions(status="pending", limit=200) if p["overdue"]]
+    return {
+        "swept_count": len(ingested),
+        "ingested": ingested,
+        "errors": errors,
+        "overdue_predictions": [
+            {"id": p["id"], "case_code": p["case_code"], "ticker": p["ticker"], "due_at": p["due_at"]}
+            for p in overdue
+        ],
+    }
 
 
 def _http_get_json(url: str, timeout: int = 15) -> Dict[str, Any]:

@@ -15,9 +15,10 @@ from ipx_terminal.config import (
     VALID_SECTORS,
     VALID_SOURCES,
 )
+from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, score_signal_with_ai
 from ipx_terminal.db import TerminalDB
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
-from ipx_terminal.ingest import ingest_gdelt, ingest_youtube, seed_demo_workspace
+from ipx_terminal.ingest import ingest_gdelt, ingest_url, ingest_youtube, seed_demo_workspace, sweep_watchlist
 from ipx_terminal.server import run_server
 
 
@@ -69,6 +70,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p_yt.add_argument("--sector", default="CREATORS", choices=VALID_SECTORS)
     p_yt.add_argument("--entity-name", default=None)
     p_yt.add_argument("--max-results", type=int, default=5)
+
+    p_url = sub.add_parser("ingest-url", help="Auto-ingest metadata from a YouTube, TikTok, X, or web URL.")
+    p_url.add_argument("--url", required=True)
+    p_url.add_argument("--ticker", required=True)
+    p_url.add_argument("--sector", default="POP", choices=VALID_SECTORS)
+    p_url.add_argument("--entity-name", default=None)
+    p_url.add_argument("--owner", default="Independent / Unknown")
+    p_url.add_argument("--notes", default="")
+
+    p_swp = sub.add_parser("sweep", help="Sweep GDELT across watchlist entities and report overdue 48-72h calls.")
+    p_swp.add_argument("--timespan", default="24h")
+    p_swp.add_argument("--max-records", type=int, default=8)
+
+    p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
+    p_ai.add_argument("--signal-id", type=int, required=True)
+    p_ai.add_argument("--category", required=True, choices=VALID_CATEGORIES)
+    p_ai.add_argument("--model", default=DEFAULT_AI_MODEL)
+    p_ai.add_argument("--base-url", default=DEFAULT_AI_BASE_URL)
 
     p_log = sub.add_parser("log", help="Log a prediction against a captured t_0 signal (freezes snapshot).")
     p_log.add_argument("--signal-id", type=int, required=True)
@@ -179,6 +198,38 @@ def main(argv: Optional[List[str]] = None) -> int:
             max_results=args.max_results,
         )
         print(f"Ingested YouTube signal #{sig['id']} [{sig['ticker']}] -> {sig['title']} (CVS={sig['cvs_score']})")
+        return 0
+
+    if args.command == "ingest-url":
+        sig = ingest_url(
+            db=db,
+            url=args.url,
+            ticker=args.ticker,
+            sector=args.sector,
+            entity_name=args.entity_name,
+            owner_holder=args.owner,
+            notes=args.notes,
+        )
+        print(f"Auto-ingested URL signal #{sig['id']} [{sig['ticker']}] -> {sig['title']} (CVS={sig['cvs_score']})")
+        return 0
+
+    if args.command == "sweep":
+        res = sweep_watchlist(db=db, timespan=args.timespan, max_records=args.max_records)
+        print(json.dumps(res, indent=2))
+        return 0
+
+    if args.command == "ask-ai":
+        sig = db.get_signal(args.signal_id)
+        if not sig:
+            print(f"Signal #{args.signal_id} not found")
+            return 1
+        res = score_signal_with_ai(
+            signal=sig,
+            category=args.category,
+            model=args.model,
+            base_url=args.base_url,
+        )
+        print(json.dumps(res, indent=2))
         return 0
 
     if args.command == "log":
