@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 import time
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +19,8 @@ from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.scoring import utc_now_iso
 
 DEFAULT_SCRAPECREATORS_BASE_URL = "https://api.scrapecreators.com"
+POLYMARKET_GAMMA_URL = "https://gamma-api.polymarket.com/markets"
+KALSHI_EVENTS_URL = "https://api.elections.kalshi.com/trade-api/v2/events"
 SCRAPECREATORS_ENDPOINTS: Dict[str, str] = {
     "TikTok": "/v2/tiktok/video",
     "Instagram": "/v1/instagram/post",
@@ -571,6 +573,270 @@ def auto_pair_creator_ab(
         "out_path": str(out_path) if pairs else None,
         "pairs": pairs,
     }
+
+
+_IP_SECTOR_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "MUSIC": ("spotify", "billboard", "grammy", "album", "song", "taylor swift", "drake", "kendrick", "music", "singer", "rapper", "concert", "tour", "eurovision"),
+    "FILM_TV": ("oscar", "academy award", "box office", "netflix", "disney", "movie", "film", "emmy", "golden globe", "stranger things", "hbo", "avatar", "marvel", "star wars", "rotten tomatoes"),
+    "GAMING": ("gta", "grand theft auto", "nintendo", "playstation", "xbox", "steam", "esports", "valorant", "league of legends", "twitch", "video game", "fortnite", "minecraft", "roblox"),
+    "CREATORS": ("mrbeast", "youtube", "tiktok", "podcast", "joe rogan", "streamer", "influencer", "subathon", "ishowspeed", "kai cenat", "logan paul", "jake paul"),
+    "SPORTS": ("nba", "nfl", "nhl", "mlb", "ufc", "fifa", "world cup", "super bowl", "stanley cup", "champions league", "f1", "formula 1", "wimbledon", "olympics", "mvp", "heisman"),
+    "DEALS": ("acquire", "acquisition", "merger", "ipo", "ceo", "valuation", "nvidia", "openai", "apple", "meta", "tiktok ban", "buyout", "paramount", "warner", "sony"),
+    "POP": ("celebrity", "kardashian", "met gala", "time person", "viral", "meme", "trending", "x.com", "elon musk", "culture", "entertainment"),
+}
+
+
+def _infer_market_sector(text: str, category_hint: str = "") -> Optional[str]:
+    hay = f"{text} {category_hint}".lower()
+    for sector, keywords in _IP_SECTOR_KEYWORDS.items():
+        if any(kw in hay for kw in keywords):
+            return sector
+    cat_l = category_hint.lower()
+    if any(k in cat_l for k in ("entertainment", "culture", "media", "pop")):
+        return "POP"
+    if "sport" in cat_l:
+        return "SPORTS"
+    return None
+
+
+def _opt_float(val: Any) -> Optional[float]:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        return float(str(val).replace(",", "").strip())
+    except ValueError:
+        return None
+
+
+def fetch_polymarket_markets(
+    query: str = "",
+    ip_only: bool = True,
+    limit: int = 20,
+    timeout: int = 15,
+) -> List[Dict[str, Any]]:
+    """Fetch active Polymarket markets via free public Gamma API (no API key required)."""
+    params = urllib.parse.urlencode(
+        {
+            "active": "true",
+            "closed": "false",
+            "limit": "120",
+            "order": "volume24hr",
+            "ascending": "false",
+        }
+    )
+    payload = _http_get_json(f"{POLYMARKET_GAMMA_URL}?{params}", timeout=timeout)
+    items = payload if isinstance(payload, list) else (payload.get("data") or [])
+    q_low = query.strip().lower()
+    out: List[Dict[str, Any]] = []
+
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        question = _first_str(m.get("question"), m.get("title"))
+        if not question:
+            continue
+        desc = _first_str(m.get("description"))
+        if q_low and q_low not in question.lower() and q_low not in desc.lower():
+            continue
+
+        sector = _infer_market_sector(question, _first_str(m.get("category"), desc[:140]))
+        if ip_only and not sector and not q_low:
+            continue
+
+        raw_prices = m.get("outcomePrices")
+        if isinstance(raw_prices, str):
+            try:
+                raw_prices = json.loads(raw_prices)
+            except Exception:
+                raw_prices = []
+        yes_prob = _opt_float(raw_prices[0]) if isinstance(raw_prices, list) and raw_prices else None
+        yes_pct = round(yes_prob * 100.0, 1) if yes_prob is not None else None
+        vol24 = _opt_float(m.get("volume24hr")) or 0.0
+        vol_total = _opt_float(m.get("volume")) or vol24
+        slug = _first_str(m.get("slug"))
+        url = f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com"
+        mkt_id = _first_str(m.get("id"), slug)
+
+        out.append(
+            {
+                "source": "Polymarket",
+                "market_id": mkt_id,
+                "ticker": normalize_ticker(re.sub(r"[^A-Za-z0-9]+", "", slug[:10] or mkt_id[:10]) or "POLY.MKT"),
+                "title": question,
+                "sector": sector or "POP",
+                "yes_pct": yes_pct,
+                "volume_24h": round(vol24, 2),
+                "total_volume": round(vol_total, 2),
+                "end_date": _first_str(m.get("endDate")),
+                "url": url,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def fetch_kalshi_markets(
+    query: str = "",
+    ip_only: bool = True,
+    limit: int = 20,
+    timeout: int = 15,
+) -> List[Dict[str, Any]]:
+    """Fetch open Kalshi markets via free public Trade API v2 events endpoint (no API key required)."""
+    params = urllib.parse.urlencode(
+        {
+            "status": "open",
+            "with_nested_markets": "true",
+            "limit": "100",
+        }
+    )
+    payload = _http_get_json(f"{KALSHI_EVENTS_URL}?{params}", timeout=timeout)
+    events = payload.get("events") if isinstance(payload, dict) else []
+    q_low = query.strip().lower()
+    out: List[Dict[str, Any]] = []
+
+    for ev in events or []:
+        if not isinstance(ev, dict):
+            continue
+        ev_title = _first_str(ev.get("title"), ev.get("sub_title"))
+        ev_cat = _first_str(ev.get("category"))
+        if not ev_title:
+            continue
+        if q_low and q_low not in ev_title.lower() and q_low not in ev_cat.lower():
+            continue
+
+        sector = _infer_market_sector(ev_title, ev_cat)
+        if ip_only and not sector and not q_low:
+            continue
+
+        mkts = [
+            m for m in (ev.get("markets") or [])
+            if isinstance(m, dict) and not m.get("mve_collection_ticker")
+        ]
+        if not mkts:
+            continue
+
+        def _kalshi_vol(m: Dict[str, Any]) -> float:
+            return (
+                _opt_float(m.get("volume_24h_fp"))
+                or _opt_float(m.get("volume_24h"))
+                or _opt_float(m.get("volume_fp"))
+                or _opt_float(m.get("volume"))
+                or 0.0
+            )
+
+        top_m = max(mkts, key=_kalshi_vol)
+        price_dollars = (
+            _opt_float(top_m.get("last_price_dollars"))
+            or _opt_float(top_m.get("yes_bid_dollars"))
+            or (_opt_float(top_m.get("last_price")) / 100.0 if _opt_float(top_m.get("last_price")) is not None else None)
+        )
+        yes_pct = round(price_dollars * 100.0, 1) if price_dollars is not None else None
+        vol24 = _opt_float(top_m.get("volume_24h_fp")) or _opt_float(top_m.get("volume_24h")) or 0.0
+        vol_total = _opt_float(top_m.get("volume_fp")) or _opt_float(top_m.get("volume")) or vol24
+        series = _first_str(ev.get("series_ticker"), ev.get("event_ticker"), top_m.get("ticker"))
+        sub_label = _first_str(top_m.get("yes_sub_title"), top_m.get("subtitle"))
+        full_title = f"{ev_title} ({sub_label})" if sub_label and sub_label.lower() not in ev_title.lower() else ev_title
+
+        out.append(
+            {
+                "source": "Kalshi",
+                "market_id": _first_str(top_m.get("ticker"), series),
+                "ticker": normalize_ticker(re.sub(r"[^A-Za-z0-9]+", "", series[:10]) or "KALSHI"),
+                "title": full_title[:180],
+                "sector": sector or "POP",
+                "yes_pct": yes_pct,
+                "volume_24h": round(vol24, 2),
+                "total_volume": round(vol_total, 2),
+                "end_date": _first_str(top_m.get("close_time"), top_m.get("expiration_time")),
+                "url": f"https://kalshi.com/markets/{series.lower()}" if series else "https://kalshi.com",
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def fetch_prediction_markets(
+    source: str = "all",
+    query: str = "",
+    ip_only: bool = True,
+    limit: int = 24,
+) -> Dict[str, Any]:
+    """Fetch combined live Polymarket + Kalshi Content IP markets with zero API keys."""
+    src = source.strip().lower()
+    markets: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    half = max(1, limit // 2) if src == "all" else limit
+
+    if src in ("all", "polymarket"):
+        try:
+            markets.extend(fetch_polymarket_markets(query=query, ip_only=ip_only, limit=half))
+        except Exception as exc:
+            errors.append(f"Polymarket: {exc}")
+
+    if src in ("all", "kalshi"):
+        try:
+            markets.extend(fetch_kalshi_markets(query=query, ip_only=ip_only, limit=half))
+        except Exception as exc:
+            errors.append(f"Kalshi: {exc}")
+
+    markets.sort(key=lambda m: (float(m.get("volume_24h") or 0), float(m.get("total_volume") or 0)), reverse=True)
+    return {
+        "source": src,
+        "query": query,
+        "ip_only": ip_only,
+        "count": len(markets),
+        "markets": markets[:limit],
+        "errors": errors,
+    }
+
+
+def ingest_market_signal(
+    db: TerminalDB,
+    market: Dict[str, Any],
+    ticker: Optional[str] = None,
+    sector: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Freeze a live Polymarket or Kalshi market odds snapshot into IPX Terminal at t_0."""
+    src = str(market.get("source") or "Polymarket")
+    title = str(market.get("title") or "").strip()
+    if not title:
+        raise ValueError("Market title is required")
+    yes_pct = market.get("yes_pct")
+    vol24 = float(market.get("volume_24h") or 0.0)
+    vol_tot = float(market.get("total_volume") or 0.0)
+    use_ticker = normalize_ticker(ticker or str(market.get("ticker") or src[:6]))
+    use_sector = str(sector or market.get("sector") or "POP").upper()
+    odds_str = f"{yes_pct}% YES" if yes_pct is not None else "odds n/a"
+
+    summary = (
+        f"Live {src} prediction market snapshot at t_0: '{title}' trading at {odds_str} "
+        f"(24h volume: ${vol24:,.0f}, total volume: ${vol_tot:,.0f})."
+    )
+    return db.insert_signal(
+        ticker=use_ticker,
+        title=f"[{src} {odds_str}] {title}"[:160],
+        summary=summary,
+        platforms=[src],
+        metrics={
+            "market_source": src,
+            "market_id": market.get("market_id", ""),
+            "yes_pct": yes_pct,
+            "implied_probability": round(float(yes_pct) / 100.0, 4) if yes_pct is not None else None,
+            "volume_24h": vol24,
+            "total_volume": vol_tot,
+            "end_date": market.get("end_date", ""),
+            "url": market.get("url", ""),
+        },
+        samples=[f"{src}: {title} ({odds_str})"],
+        entities_mentioned=[use_ticker, src],
+        source_type="prediction_market",
+        url=str(market.get("url") or ""),
+        sector=use_sector,
+        entity_name=title[:80],
+        owner_holder=f"{src} Prediction Market",
+    )
 
 
 class _MetaHTMLParser(HTMLParser):

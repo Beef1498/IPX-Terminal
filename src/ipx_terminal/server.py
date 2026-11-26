@@ -31,7 +31,9 @@ from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_jsonl, parse_concepts_text
 from ipx_terminal.ingest import (
     auto_pair_creator_ab,
+    fetch_prediction_markets,
     ingest_gdelt,
+    ingest_market_signal,
     ingest_url,
     recheck_prediction_metrics,
     seed_demo_workspace,
@@ -162,6 +164,15 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     )
                     return
 
+                if path == "/api/markets":
+                    q_text = params.get("q", [""])[0]
+                    src = params.get("source", ["all"])[0]
+                    ip_only = params.get("ip_only", ["1"])[0].lower() not in ("0", "false", "no")
+                    lim = int(params.get("limit", ["24"])[0])
+                    data = fetch_prediction_markets(source=src, query=q_text, ip_only=ip_only, limit=lim)
+                    self._send_json({"ok": True, **data})
+                    return
+
                 if path.startswith("/api/ticker/"):
                     ticker = urllib.parse.unquote(path[len("/api/ticker/"):])
                     norm = normalize_ticker(ticker)
@@ -223,6 +234,16 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         sector=str(body.get("sector", "POP")),
                         entity_name=body.get("entity_name"),
                         owner_holder=str(body.get("owner_holder", "Independent / Unknown")),
+                    )
+                    self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/ingest/market":
+                    sig = ingest_market_signal(
+                        db=db,
+                        market=body.get("market") or body,
+                        ticker=body.get("ticker") or None,
+                        sector=body.get("sector") or None,
                     )
                     self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
                     return

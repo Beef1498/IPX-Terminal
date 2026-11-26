@@ -20,6 +20,7 @@ from ipx_terminal.db import TerminalDB
 from ipx_terminal.exporter import export_resolved_to_jsonl, parse_concepts_text
 from ipx_terminal.ingest import (
     auto_pair_creator_ab,
+    fetch_prediction_markets,
     ingest_gdelt,
     ingest_url,
     ingest_youtube,
@@ -116,6 +117,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_aab.add_argument("--pairs", type=int, default=5, help="Max blind Winner-vs-Flop pairs to build (default: 5).")
     p_aab.add_argument("--min-ratio", type=float, default=2.0, help="Min winner/flop performance multiplier (default: 2.0).")
     p_aab.add_argument("--out-dir", type=Path, default=None, help="Output directory (defaults to IPX-Eval/datasets/v0.5-creative).")
+
+    p_mkts = sub.add_parser(
+        "markets",
+        help="Fetch live Polymarket & Kalshi Content IP prediction markets (zero API keys required).",
+    )
+    p_mkts.add_argument("--source", default="all", choices=("all", "polymarket", "kalshi"))
+    p_mkts.add_argument("--query", default="", help="Optional keyword filter.")
+    p_mkts.add_argument("--all-categories", action="store_true", help="Include non-IP/culture markets too.")
+    p_mkts.add_argument("--limit", type=int, default=15)
 
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
@@ -347,6 +357,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if res["out_path"]:
             print(f"Saved -> {res['out_path']}")
+        return 0
+
+    if args.command == "markets":
+        res = fetch_prediction_markets(
+            source=args.source,
+            query=args.query,
+            ip_only=not args.all_categories,
+            limit=args.limit,
+        )
+        print(f"Live Prediction Markets ({res['count']} loaded; source={res['source']}):")
+        for m in res["markets"]:
+            odds = f"{m['yes_pct']:5.1f}%" if m["yes_pct"] is not None else "  n/a"
+            print(f"  [{m['source']:<10}] {m['sector']:<8} {odds} YES  vol24=${m['volume_24h']:>10,.0f}  {m['title'][:75]}")
+        if res["errors"]:
+            for err in res["errors"]:
+                print(f"  ! {err}")
         return 0
 
     if args.command == "serve":

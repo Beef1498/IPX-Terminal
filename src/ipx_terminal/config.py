@@ -93,6 +93,7 @@ FUNCTION_CODES: Dict[str, str] = {
     "WIRE": "Live t_0 signal ingestion tape and manual capture",
     "LOG": "Prediction logger and 48-72h outcome resolution desk",
     "BRIEFS": "Creative Brief generator & Content Factory post outcome logger",
+    "MKTS": "Live Polymarket & Kalshi Content IP prediction markets",
     "EXPORT": "Schema-validated IPX-Eval JSONL export",
     "CN": "Catalyst and news signals for active ticker",
     "MA": "Deals, licensing, and M&A sector filter",

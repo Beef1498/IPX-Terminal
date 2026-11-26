@@ -383,6 +383,32 @@ class TestIPXTerminal(unittest.TestCase):
                 self.assertNotIn("likes", cand)
                 self.assertNotIn("perf_score", cand)
 
+    def test_prediction_markets_fetch_and_freeze_t0_signal(self) -> None:
+        from ipx_terminal.ingest import fetch_polymarket_markets, ingest_market_signal
+
+        fake_pm = [
+            {
+                "id": "pm-1",
+                "question": "Will GTA 6 release before December 2026?",
+                "slug": "gta-6-release-2026",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["0.62", "0.38"]',
+                "volume24hr": 245000.0,
+                "volume": 1200000.0,
+                "endDate": "2026-12-31T00:00:00Z",
+            }
+        ]
+        with mock.patch("ipx_terminal.ingest._http_get_json", return_value=fake_pm):
+            mkts = fetch_polymarket_markets(ip_only=True, limit=5)
+        self.assertEqual(len(mkts), 1)
+        self.assertEqual(mkts[0]["sector"], "GAMING")
+        self.assertEqual(mkts[0]["yes_pct"], 62.0)
+
+        sig = ingest_market_signal(self.db, mkts[0])
+        self.assertEqual(sig["sector"], "GAMING")
+        self.assertEqual(sig["metrics"]["yes_pct"], 62.0)
+        self.assertEqual(sig["metrics"]["market_source"], "Polymarket")
+
 
 if __name__ == "__main__":
     unittest.main()

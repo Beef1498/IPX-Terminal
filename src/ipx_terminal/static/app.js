@@ -14,6 +14,12 @@ const state = {
   activeTab: "DES",
   lastExport: null,
   lastCreativeExport: null,
+  lastAutoAb: null,
+  markets: [],
+  marketsLoaded: false,
+  marketsSource: "all",
+  marketsQuery: "",
+  marketsIpOnly: true,
 };
 
 function esc(str) {
@@ -392,6 +398,105 @@ function renderDesk() {
         setStatus(err.message, true);
       }
     });
+    return;
+  }
+
+  if (state.activeTab === "MKTS") {
+    const controls = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-family:monospace;font-size:11px;color:#94a3b8">LIVE PREDICTION MARKETS · POLYMARKET &amp; KALSHI (${state.markets.length})</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+          <input id="mkts-query" value="${esc(state.marketsQuery)}" placeholder="Filter (e.g. GTA, Oscar, NFL)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:165px" />
+          <select id="mkts-source" style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 6px;border-radius:3px;font-size:11px">
+            <option value="all" ${state.marketsSource === "all" ? "selected" : ""}>ALL</option>
+            <option value="polymarket" ${state.marketsSource === "polymarket" ? "selected" : ""}>Polymarket</option>
+            <option value="kalshi" ${state.marketsSource === "kalshi" ? "selected" : ""}>Kalshi</option>
+          </select>
+          <label style="font-family:monospace;font-size:10.5px;color:#94a3b8;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="mkts-ip-only" ${state.marketsIpOnly ? "checked" : ""} /> IP/Culture
+          </label>
+          <button type="button" class="btn-action cyan" id="btn-refresh-mkts">Fetch Live Odds</button>
+        </div>
+      </div>
+    `;
+    const listHtml = state.markets.length
+      ? state.markets
+          .map((m, idx) => {
+            const pct = m.yes_pct != null ? `${m.yes_pct}% YES` : "n/a";
+            const barW = m.yes_pct != null ? Math.max(2, Math.min(100, m.yes_pct)) : 0;
+            const srcColor = m.source === "Polymarket" ? "#38bdf8" : "#34d399";
+            return `
+              <div class="pred-card">
+                <div class="pred-head">
+                  <span><b style="color:${srcColor}">${esc(m.source.toUpperCase())}</b> · <span class="pill">${esc(m.sector)}</span> · <span style="color:#94a3b8">24h Vol: $${Math.round(m.volume_24h || 0).toLocaleString()}</span></span>
+                  <span style="font-family:monospace;font-weight:700;color:#f59e0b">${pct}</span>
+                </div>
+                <div style="font-weight:600;margin:4px 0">${esc(m.title)}</div>
+                <div style="width:100%;height:5px;background:#070a0f;border:1px solid #1e293b;border-radius:99px;overflow:hidden;margin:4px 0 7px">
+                  <div style="width:${barW}%;height:100%;background:${srcColor}"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                  <a href="${esc(m.url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:10.5px;color:#60a5fa;text-decoration:none">Open Market ↗</a>
+                  <button type="button" class="btn-action amber" data-freeze-market="${idx}">Freeze t₀ Signal</button>
+                </div>
+              </div>
+            `;
+          })
+          .join("")
+      : `<div style="color:#8b9bb0;font-size:12px">${state.marketsLoaded ? "No matching markets found. Try unchecking IP/Culture or clearing the filter." : "Loading live Polymarket & Kalshi odds..."}</div>`;
+
+    body.innerHTML = controls + listHtml;
+    const runFetch = async () => {
+      state.marketsQuery = document.getElementById("mkts-query").value.trim();
+      state.marketsSource = document.getElementById("mkts-source").value;
+      state.marketsIpOnly = document.getElementById("mkts-ip-only").checked;
+      const btn = document.getElementById("btn-refresh-mkts");
+      if (btn) { btn.disabled = true; btn.textContent = "Loading..."; }
+      try {
+        const qs = new URLSearchParams({
+          source: state.marketsSource,
+          q: state.marketsQuery,
+          ip_only: state.marketsIpOnly ? "1" : "0",
+          limit: "24",
+        });
+        const res = await api(`/api/markets?${qs.toString()}`);
+        state.markets = res.markets || [];
+        state.marketsLoaded = true;
+        setStatus(`Loaded ${state.markets.length} live Polymarket/Kalshi markets`);
+        renderDesk();
+      } catch (err) {
+        setStatus(err.message, true);
+        if (btn) { btn.disabled = false; btn.textContent = "Fetch Live Odds"; }
+      }
+    };
+    document.getElementById("btn-refresh-mkts").addEventListener("click", runFetch);
+    document.getElementById("mkts-query").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runFetch();
+    });
+    body.querySelectorAll("[data-freeze-market]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const m = state.markets[Number(btn.dataset.freezeMarket)];
+        if (!m) return;
+        btn.disabled = true;
+        btn.textContent = "Freezing...";
+        try {
+          const res = await api("/api/ingest/market", {
+            method: "POST",
+            body: JSON.stringify({ market: m }),
+          });
+          setStatus(`Froze ${m.source} t₀ signal (${res.signal.ticker}) in WIRE & IP Graph!`);
+          await loadBootstrap();
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = "Freeze t₀ Signal";
+          setStatus(err.message, true);
+        }
+      });
+    });
+    if (!state.marketsLoaded) {
+      state.marketsLoaded = true;
+      runFetch();
+    }
     return;
   }
 
@@ -1043,14 +1148,14 @@ async function runCommandText(cmd) {
       await loadBootstrap(true);
     } else if (res.action === "select_ticker") {
       await selectTicker(res.ticker, false);
-      if (["DES", "LOG", "BRIEFS", "EXPORT"].includes(res.function)) {
+      if (["DES", "LOG", "BRIEFS", "MKTS", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }
     } else if (res.action === "focus_function") {
       if (res.function === "HELP") {
         openHelpModal();
-      } else if (["DES", "LOG", "BRIEFS", "EXPORT"].includes(res.function)) {
+      } else if (["DES", "LOG", "BRIEFS", "MKTS", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }
