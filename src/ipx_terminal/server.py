@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 import urllib.parse
 
 from ipx_terminal.config import (
+    APP_VERSION,
     CATEGORY_LABELS,
     DEFAULT_EXPORT_DIR,
     DEFAULT_QUESTIONS,
@@ -20,6 +21,14 @@ from ipx_terminal.config import (
     VALID_DIFFICULTIES,
     VALID_SECTORS,
     VALID_SOURCES,
+)
+from ipx_terminal.hub import (
+    fetch_github_updates,
+    get_configured_write_token,
+    get_eval_repo,
+    get_orchestration_map,
+    is_write_authorized,
+    sync_github_eval_runs,
 )
 from ipx_terminal.ai_scorer import (
     DEFAULT_AI_BASE_URL,
@@ -137,6 +146,55 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                 return
 
             try:
+                if path == "/api/health":
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "version": APP_VERSION,
+                            "write_protected": bool(get_configured_write_token()),
+                        }
+                    )
+                    return
+
+                if path == "/api/auth/status":
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "write_protected": bool(get_configured_write_token()),
+                            "unlocked": is_write_authorized(self.headers),
+                        }
+                    )
+                    return
+
+                if path == "/api/evals":
+                    model_filter = qs.get("model", ["ALL"])[0]
+                    ds_filter = qs.get("dataset", ["ALL"])[0]
+                    lim = int(qs.get("limit", ["100"])[0])
+                    eval_repo = get_eval_repo()
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "eval_repo": eval_repo,
+                            "eval_repo_url": f"https://github.com/{eval_repo}",
+                            "summary": db.get_eval_summary(),
+                            "runs": db.list_eval_runs(
+                                model_name=model_filter,
+                                dataset_version=ds_filter,
+                                limit=lim,
+                            ),
+                        }
+                    )
+                    return
+
+                if path == "/api/orchestration":
+                    self._send_json({"ok": True, **get_orchestration_map(db)})
+                    return
+
+                if path == "/api/updates":
+                    force = qs.get("refresh", ["0"])[0].lower() in ("1", "true", "yes")
+                    self._send_json({"ok": True, **fetch_github_updates(force_refresh=force)})
+                    return
+
                 if path == "/api/bootstrap":
                     sector = qs.get("sector", ["ALL"])[0]
                     movers = db.get_top_movers(sector=None if sector == "ALL" else sector)
@@ -209,9 +267,89 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
             try:
                 body = self._read_json_body()
 
+                if path == "/api/auth/verify":
+                    candidate = str(body.get("token") or body.get("passcode") or "")
+                    ok = is_write_authorized(self.headers, candidate_token=candidate)
+                    if not ok:
+                        self._send_json(
+                            {"ok": False, "unlocked": False, "error": "Invalid write passcode."},
+                            status=HTTPStatus.UNAUTHORIZED,
+                        )
+                        return
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "write_protected": bool(get_configured_write_token()),
+                            "unlocked": True,
+                        }
+                    )
+                    return
+
                 if path == "/api/command":
-                    result = parse_command_bar(str(body.get("command", "")), db)
+                    raw_cmd = str(body.get("command", ""))
+                    if raw_cmd.strip().upper().startswith("SEED") and not is_write_authorized(self.headers):
+                        self._send_json(
+                            {"error": "Write passcode required. Click UNLOCK in the top bar.", "auth_required": True},
+                            status=HTTPStatus.UNAUTHORIZED,
+                        )
+                        return
+                    result = parse_command_bar(raw_cmd, db)
                     self._send_json(result)
+                    return
+
+                if not is_write_authorized(self.headers):
+                    self._send_json(
+                        {"error": "Write passcode required. Click UNLOCK in the top bar.", "auth_required": True},
+                        status=HTTPStatus.UNAUTHORIZED,
+                    )
+                    return
+
+                if path == "/api/evals/runs":
+                    def _opt_f(k: str) -> Optional[float]:
+                        v = body.get(k)
+                        return None if v in ("", None) else float(v)
+
+                    def _opt_i(k: str) -> Optional[int]:
+                        v = body.get(k)
+                        return None if v in ("", None) else int(v)
+
+                    cat_scores = body.get("category_scores") or {}
+                    if isinstance(cat_scores, str):
+                        cat_scores = json.loads(cat_scores) if cat_scores.strip() else {}
+                    metrics = body.get("metrics") or {}
+                    if isinstance(metrics, str):
+                        metrics = json.loads(metrics) if metrics.strip() else {}
+
+                    run = db.upsert_eval_run(
+                        run_id=str(body.get("run_id") or f"run-{int(body.get('step') or 0)}-{body['model_name']}"),
+                        model_name=str(body["model_name"]),
+                        model_family=str(body.get("model_family", "")),
+                        dataset_version=str(body.get("dataset_version", "v0.3")),
+                        hardware=str(body.get("hardware", "DGX Spark")),
+                        status=str(body.get("status", "completed")),
+                        overall_score=_opt_f("overall_score"),
+                        accuracy_pct=_opt_f("accuracy_pct"),
+                        concept_recall_pct=_opt_f("concept_recall_pct"),
+                        total_cases=_opt_i("total_cases") or 0,
+                        passed_cases=_opt_i("passed_cases") or 0,
+                        train_loss=_opt_f("train_loss"),
+                        eval_loss=_opt_f("eval_loss"),
+                        step=_opt_i("step"),
+                        epoch=_opt_f("epoch"),
+                        category_scores=cat_scores,
+                        metrics=metrics,
+                        commit_sha=str(body.get("commit_sha", "")),
+                        source=str(body.get("source", "webhook")),
+                        notes=str(body.get("notes", "")),
+                        started_at=body.get("started_at") or None,
+                        created_at=body.get("created_at") or None,
+                    )
+                    self._send_json({"ok": True, "run": run}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/evals/sync":
+                    res = sync_github_eval_runs(db=db, repo=body.get("repo") or None)
+                    self._send_json({"ok": True, **res})
                     return
 
                 if path == "/api/seed":

@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IPX TERMINAL // Content IP Intelligence Launchpad</title>
+  <title>IPX COMMAND CENTER // Eval Tracking · Live Terminal · Orchestration · Updates</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="brand-badge">IPX</span>
-      <span class="brand-title">TERMINAL</span>
-      <span class="brand-ver">v0.1</span>
+      <span class="brand-title">COMMAND CENTER</span>
+      <span class="brand-ver">v0.2</span>
     </div>
 
     <form id="command-form" class="command-bar" autocomplete="off">
@@ -35,23 +35,42 @@
     </div>
   </header>
 
-  <nav class="sector-bar">
-    <div class="sector-keys" id="sector-keys"></div>
-    <div class="toolbar-actions">
-      <button type="button" class="btn-action green" id="btn-open-url">+ Paste URL</button>
-      <button type="button" class="btn-action" id="btn-open-capture">+ Manual t₀</button>
-      <button type="button" class="btn-action cyan" id="btn-open-gdelt">GDELT Sweep</button>
-      <button type="button" class="btn-action amber" id="btn-quick-export">Export → IPX-Eval</button>
-      <button type="button" class="btn-action help-btn" id="btn-open-help" title="Open Bloomberg-style operator's key & command guide (shortcut: ?)">? HELP</button>
+  <nav class="hub-nav" aria-label="Primary Command Center Navigation">
+    <div class="hub-tabs">
+      <button type="button" class="hub-tab" data-view="evals">1 · EVAL TRACKING</button>
+      <button type="button" class="hub-tab active" data-view="terminal">2 · LIVE TERMINAL</button>
+      <button type="button" class="hub-tab" data-view="orchestration">3 · ORCHESTRATION</button>
+      <button type="button" class="hub-tab" data-view="updates">4 · UPDATES &amp; GITHUB</button>
+    </div>
+    <div class="hub-nav-right">
+      <a class="hub-gh-link" href="https://github.com/Beef1498/IPX-Terminal" target="_blank" rel="noopener">GH: IPX-Terminal ↗</a>
+      <a class="hub-gh-link" href="https://github.com/Beef1498/IPX-eval" target="_blank" rel="noopener">GH: IPX-eval ↗</a>
+      <button type="button" class="btn-auth" id="btn-auth-lock" title="Manage write passcode for hosted read-only/admin mode">OPEN ACCESS</button>
     </div>
   </nav>
 
   <div class="status-banner" id="status-banner">
     <span class="status-dot"></span>
-    <span id="status-text">IPX Terminal ready. Press / for command bar or ? for HELP key.</span>
+    <span id="status-text">IPX Command Center ready. Press / for command bar or ? for HELP key.</span>
   </div>
 
-  <main class="launchpad-grid">
+  <!-- VIEW 1: EVAL TRACKING -->
+  <section id="view-evals" class="hub-view hidden"></section>
+
+  <!-- VIEW 2: LIVE TERMINAL -->
+  <div id="view-terminal" class="hub-view active">
+    <nav class="sector-bar">
+      <div class="sector-keys" id="sector-keys"></div>
+      <div class="toolbar-actions">
+        <button type="button" class="btn-action green" id="btn-open-url">+ Paste URL</button>
+        <button type="button" class="btn-action" id="btn-open-capture">+ Manual t₀</button>
+        <button type="button" class="btn-action cyan" id="btn-open-gdelt">GDELT Sweep</button>
+        <button type="button" class="btn-action amber" id="btn-quick-export">Export → IPX-Eval</button>
+        <button type="button" class="btn-action help-btn" id="btn-open-help" title="Open Bloomberg-style operator's key & command guide (shortcut: ?)">? HELP</button>
+      </div>
+    </nav>
+
+    <main class="launchpad-grid">
     <!-- PANE 1: TOP MOVERS -->
     <section class="pane" id="pane-top">
       <div class="pane-header">
@@ -111,9 +130,16 @@
       </div>
       <div class="pane-body" id="desk-body"></div>
     </section>
-  </main>
+    </main>
+  </div>
 
-  <!-- MODAL: CAPTURE / GDELT / LOG / RESOLVE -->
+  <!-- VIEW 3: ORCHESTRATION -->
+  <section id="view-orchestration" class="hub-view hidden"></section>
+
+  <!-- VIEW 4: UPDATES & GITHUB -->
+  <section id="view-updates" class="hub-view hidden"></section>
+
+  <!-- MODAL: CAPTURE / GDELT / LOG / RESOLVE / EVAL / UNLOCK -->
   <div class="modal-backdrop hidden" id="modal-backdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -125,5 +151,6 @@
   </div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/hub.js"></script>
 </body>
 </html>

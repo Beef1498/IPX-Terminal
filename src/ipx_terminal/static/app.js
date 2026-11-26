@@ -42,12 +42,24 @@ function setStatus(msg, isError = false) {
 }
 
 async function api(path, options = {}) {
+  const token = sessionStorage.getItem("ipx_write_token") || "";
+  const extraHeaders = options.headers || {};
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { "X-IPX-Token": token } : {}),
+    ...extraHeaders,
+  };
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 401 && data.auth_required && typeof window.openUnlockModal === "function") {
+      window.openUnlockModal(data.error);
+    }
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
   return data;
 }
 

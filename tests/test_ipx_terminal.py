@@ -450,6 +450,82 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertEqual(sig["metrics"]["us_states_active"], 4)
         self.assertEqual(sig["metrics"]["origin_state"], "GA")
 
+    def test_command_center_evals_orchestration_and_write_auth(self) -> None:
+        import io
+        import os
+        from ipx_terminal.server import make_handler
+
+        handler_cls = make_handler(self.db)
+
+        def _invoke(method: str, path: str, body: dict | None = None, token: str | None = None):
+            h = handler_cls.__new__(handler_cls)
+            raw = json.dumps(body).encode("utf-8") if body is not None else b""
+            h.path = path
+            h.headers = {"Content-Type": "application/json", "Content-Length": str(len(raw))}
+            if token:
+                h.headers["X-IPX-Token"] = token
+            h.rfile = io.BytesIO(raw)
+            h.wfile = io.BytesIO()
+            captured: dict = {}
+
+            def _send_json(payload, status=200):
+                captured["status"] = int(status)
+                captured["data"] = payload
+
+            h._send_json = _send_json
+            if method == "GET":
+                h.do_GET()
+            else:
+                h.do_POST()
+            return captured["status"], captured["data"]
+
+        with mock.patch.dict(os.environ, {"IPX_WRITE_TOKEN": "secret-pass-42"}, clear=False):
+            # 1. Public read endpoints work without token
+            st, health = _invoke("GET", "/api/health")
+            self.assertEqual(st, 200)
+            self.assertTrue(health["ok"])
+            self.assertTrue(health["write_protected"])
+
+            st, orch = _invoke("GET", "/api/orchestration")
+            self.assertEqual(st, 200)
+            self.assertTrue(orch["ok"])
+            self.assertGreaterEqual(len(orch["hardware"]), 3)
+            self.assertGreaterEqual(len(orch["software"]), 4)
+            self.assertTrue(orch["runtime"]["write_protected"])
+
+            # 2. Write endpoint rejects missing token with 401
+            payload = {
+                "run_id": "dgx-test-001",
+                "model_name": "ipx-qwen3-32b-sft",
+                "dataset_version": "v0.4",
+                "overall_score": 81.4,
+                "accuracy_pct": 82.0,
+                "train_loss": 0.41,
+                "eval_loss": 0.46,
+                "category_scores": {"breakout": 85.0, "lineage": 78.0},
+            }
+            st, err = _invoke("POST", "/api/evals/runs", body=payload)
+            self.assertEqual(st, 401)
+            self.assertTrue(err.get("auth_required"))
+
+            # 3. Verify passcode endpoint works
+            st, verify_res = _invoke("POST", "/api/auth/verify", body={"token": "secret-pass-42"})
+            self.assertEqual(st, 200)
+            self.assertTrue(verify_res["unlocked"])
+
+            # 4. Write endpoint succeeds with X-IPX-Token
+            st, created = _invoke("POST", "/api/evals/runs", body=payload, token="secret-pass-42")
+            self.assertEqual(st, 201)
+            self.assertTrue(created["ok"])
+            self.assertEqual(created["run"]["run_id"], "dgx-test-001")
+
+            # 5. GET /api/evals reflects the pushed run on the leaderboard
+            st, evals = _invoke("GET", "/api/evals")
+            self.assertEqual(st, 200)
+            self.assertEqual(evals["summary"]["total_runs"], 1)
+            self.assertEqual(evals["summary"]["best_model"], "ipx-qwen3-32b-sft")
+            self.assertEqual(evals["summary"]["leaderboard"][0]["overall_score"], 81.4)
+
 
 if __name__ == "__main__":
     unittest.main()

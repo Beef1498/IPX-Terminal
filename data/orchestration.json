@@ -1,0 +1,151 @@
+{
+  "version": "0.2.0",
+  "title": "IPX Content IP Intelligence — Software & Hardware Orchestration",
+  "subtitle": "End-to-end zero-leakage flywheel from live t0 signal capture to model training, studio broadcast, and content distribution.",
+  "hardware": [
+    {
+      "id": "hw-cloud-host",
+      "name": "Cloud App Host (Railway / Render)",
+      "role": "Always-On Command Center & SQLite WAL Volume",
+      "specs": "Python 3.12 · Persistent Volume (/data) · HTTPS",
+      "status": "online",
+      "hosts_software": ["sw-terminal", "sw-hub"],
+      "description": "Serves the 4-tab IPX Command Center (Eval Tracking, Terminal, Orchestration, Updates) with public read-only viewing and passcode-protected writes."
+    },
+    {
+      "id": "hw-dgx-spark",
+      "name": "NVIDIA DGX Spark",
+      "role": "Model Training, Fine-Tuning & IPX-Eval Harness",
+      "specs": "GB10 Grace Blackwell · 128GB Unified Memory",
+      "status": "active",
+      "hosts_software": ["sw-eval", "sw-trainer"],
+      "description": "Runs local open-weight & fine-tuned Content IP models against IPX-Eval benchmarks and pushes live training/eval run metrics to POST /api/evals/runs."
+    },
+    {
+      "id": "hw-b200",
+      "name": "B200 GPU Synthesis Node",
+      "role": "MiniMax H3 Video & Creative Synthesis",
+      "specs": "NVIDIA B200 · High-Throughput Inference",
+      "status": "active",
+      "hosts_software": ["sw-factory"],
+      "description": "Synthesizes short-form creative variants from IPX Terminal Creative Briefs for A/B format testing."
+    },
+    {
+      "id": "hw-phone-fleet",
+      "name": "60-Phone Distribution Fleet",
+      "role": "Native Short-Form Publishing & 48h Telemetry",
+      "specs": "60 Physical Devices · TikTok / Reels / Shorts",
+      "status": "active",
+      "hosts_software": ["sw-factory"],
+      "description": "Publishes creative variants natively and feeds 48-hour breakout/flop outcome telemetry back into IPX Terminal and IPX-Eval."
+    }
+  ],
+  "software": [
+    {
+      "id": "sw-terminal",
+      "name": "IPX Terminal",
+      "layer": "ingest_and_workstation",
+      "repo": "https://github.com/Beef1498/IPX-Terminal",
+      "hardware_id": "hw-cloud-host",
+      "cadence": "Daily morning flywheel + real-time ad-hoc capture",
+      "stack": "Python 3.9+ stdlib · SQLite WAL · Vanilla JS/SVG",
+      "responsibilities": [
+        "Ingests live t0 signals (GDELT DOC 2.0, ScrapeCreators, Polymarket, Kalshi, Google Trends US Map, YouTube)",
+        "Computes time-decayed Cultural Velocity Score (CVS) & Cross-Platform Contagion Index",
+        "Freezes immutable t0 snapshots for 48–72h Human vs. AI predictions",
+        "Exports schema-validated JSONL cases directly to IPX-Eval"
+      ]
+    },
+    {
+      "id": "sw-eval",
+      "name": "IPX-Eval",
+      "layer": "benchmark_and_training",
+      "repo": "https://github.com/Beef1498/IPX-eval",
+      "hardware_id": "hw-dgx-spark",
+      "cadence": "Per dataset version (v0.1–v0.4+) & nightly model sweeps",
+      "stack": "Python Eval Harness · eval_case.schema.json · JSONL datasets",
+      "responsibilities": [
+        "Maintains contamination-proof Content IP benchmark datasets (breakout, lineage, contagion, ip_catalyst)",
+        "Grades frontier & local DGX Spark models on label accuracy and required concept recall",
+        "Publishes run artifacts to GitHub and pushes live run telemetry to the Eval Tracking tab"
+      ]
+    },
+    {
+      "id": "sw-trainer",
+      "name": "IPX Model Training Pipeline",
+      "layer": "benchmark_and_training",
+      "repo": "https://github.com/Beef1498/IPX-eval",
+      "hardware_id": "hw-dgx-spark",
+      "cadence": "Continuous iteration on resolved 48–72h outcomes",
+      "stack": "DGX Spark · SFT / DPO / Blind A-B Preference Pairs",
+      "responsibilities": [
+        "Trains specialist Content IP forecasting models on resolved Terminal outcomes & blind creator A/B pairs",
+        "Streams step/epoch train_loss, eval_loss, and category scores into /api/evals/runs"
+      ]
+    },
+    {
+      "id": "sw-live",
+      "name": "IPX Live",
+      "layer": "distribution_and_broadcast",
+      "repo": "https://github.com/Beef1498/IPX-Terminal",
+      "hardware_id": "hw-cloud-host",
+      "cadence": "Weekday broadcast / podcast",
+      "stack": "Live Studio Graphics · Call Your Shot Prediction Desk",
+      "responsibilities": [
+        "Uses IPX Terminal Launchpad, US Contagion Map, and Polymarket/Kalshi desk as live studio visuals",
+        "Logs on-air 'Call Your Shot' predictions directly into the 48–72h verification loop"
+      ]
+    },
+    {
+      "id": "sw-factory",
+      "name": "Content Factory",
+      "layer": "distribution_and_broadcast",
+      "repo": null,
+      "hardware_id": "hw-b200",
+      "cadence": "Continuous creative synthesis & 48h post grading",
+      "stack": "B200 MiniMax H3 · 60-Phone Fleet · Creative Briefs API",
+      "responsibilities": [
+        "Consumes IPX Terminal Creative Briefs (2s hook, edit beats, audio cues) for breakout formats",
+        "Produces variants on B200 and distributes via 60-phone fleet",
+        "Grades 48h post winners vs. flops and exports blind preference pairs back to IPX-Eval"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "from": "External Feeds (GDELT, ScrapeCreators, Polymarket, Kalshi, Trends)",
+      "to": "IPX Terminal",
+      "payload": "Raw social/news/market metrics",
+      "cadence": "Daily flywheel + on-demand URL paste",
+      "guardrail": "Freezes immutable t0 snapshot at captured_at"
+    },
+    {
+      "from": "IPX Terminal",
+      "to": "IPX-Eval (DGX Spark)",
+      "payload": "eval_case.schema.json validated JSONL",
+      "cadence": "After 48–72h ground-truth resolution",
+      "guardrail": "Zero future leakage — t0 snapshot never mutated"
+    },
+    {
+      "from": "IPX-Eval & Training Runs (DGX Spark)",
+      "to": "Command Center (Eval Tracking Tab)",
+      "payload": "Run JSON (overall_score, category_scores, train_loss, eval_loss)",
+      "cadence": "Live webhook POST /api/evals/runs + GitHub auto-sync",
+      "guardrail": "Write-token authenticated webhook"
+    },
+    {
+      "from": "IPX Terminal",
+      "to": "Content Factory (B200 + 60-Phone Fleet)",
+      "payload": "Structured Creative Briefs (hook_2s, edit_beats, audio_cue)",
+      "cadence": "Per breakout signal",
+      "guardrail": "48h post views/shares/saves graded back into blind A/B pairs"
+    },
+    {
+      "from": "GitHub (IPX-Terminal + IPX-eval)",
+      "to": "Command Center (Updates Tab)",
+      "payload": "Commits, tags, releases, repo metadata",
+      "cadence": "Live GitHub REST API (5-min server cache)",
+      "guardrail": "Read-only public/token-backed feed"
+    }
+  ]
+}

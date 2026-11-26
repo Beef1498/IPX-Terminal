@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -179,9 +180,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_exp.add_argument("--version", default="0.4")
     p_exp.add_argument("--category", default=None, choices=VALID_CATEGORIES)
 
-    p_srv = sub.add_parser("serve", help="Start the local 4-pane IPX Terminal Launchpad Web UI.")
-    p_srv.add_argument("--host", default="127.0.0.1")
-    p_srv.add_argument("--port", type=int, default=8765)
+    p_srv = sub.add_parser("serve", help="Start the 4-tab IPX Command Center & Terminal Launchpad Web UI.")
+    p_srv.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    p_srv.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
     p_srv.add_argument("--seed-if-empty", action="store_true", help="Auto-seed demo IP data if DB is empty.")
 
     return parser

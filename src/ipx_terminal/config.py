@@ -8,9 +8,17 @@ import re
 from typing import Dict, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "ipx_terminal.db"
+DEFAULT_DB_PATH = Path(os.environ.get("IPX_DB_PATH", str(PROJECT_ROOT / "data" / "ipx_terminal.db")))
 DEFAULT_EXPORT_DIR = PROJECT_ROOT / "exports" / "ipx-eval"
 DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "schemas" / "eval_case.schema.json"
+DEFAULT_ORCHESTRATION_PATH = PROJECT_ROOT / "data" / "orchestration.json"
+APP_VERSION = "0.2.0"
+
+DEFAULT_GITHUB_REPOS: Tuple[str, ...] = (
+    "Beef1498/IPX-Terminal",
+    "Beef1498/IPX-eval",
+)
+DEFAULT_EVAL_REPO = "Beef1498/IPX-eval"
 
 
 def load_dotenv(dotenv_path: Optional[Path] = None) -> None:

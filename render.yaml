@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: ipx-command-center
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: ipx-sqlite-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: IPX_DB_PATH
+        value: /data/ipx_terminal.db
+      - key: IPX_GITHUB_REPOS
+        value: Beef1498/IPX-Terminal,Beef1498/IPX-eval
+      - key: IPX_EVAL_REPO
+        value: Beef1498/IPX-eval
+      - key: IPX_WRITE_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: SCRAPECREATORS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

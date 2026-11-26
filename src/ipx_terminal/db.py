@@ -124,6 +124,35 @@ CREATE TABLE IF NOT EXISTS creative_briefs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_briefs_status ON creative_briefs(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    model_name TEXT NOT NULL,
+    model_family TEXT NOT NULL DEFAULT '',
+    dataset_version TEXT NOT NULL DEFAULT 'v0.3',
+    hardware TEXT NOT NULL DEFAULT 'DGX Spark',
+    status TEXT NOT NULL DEFAULT 'completed',
+    overall_score REAL,
+    accuracy_pct REAL,
+    concept_recall_pct REAL,
+    total_cases INTEGER NOT NULL DEFAULT 0,
+    passed_cases INTEGER NOT NULL DEFAULT 0,
+    train_loss REAL,
+    eval_loss REAL,
+    step INTEGER,
+    epoch REAL,
+    category_scores_json TEXT NOT NULL DEFAULT '{}',
+    metrics_json TEXT NOT NULL DEFAULT '{}',
+    commit_sha TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'webhook',
+    notes TEXT NOT NULL DEFAULT '',
+    started_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_eval_runs_created ON eval_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_model ON eval_runs(model_name, created_at DESC);
 """
 
 
@@ -978,4 +1007,215 @@ class TerminalDB:
             "outcome_notes": row["outcome_notes"],
             "created_at": row["created_at"],
             "graded_at": row["graded_at"],
+        }
+
+    # ------------------------------------------------------------------
+    # Eval & Training Runs (IPX-Eval Live Dashboard)
+    # ------------------------------------------------------------------
+    def upsert_eval_run(
+        self,
+        run_id: str,
+        model_name: str,
+        model_family: str = "",
+        dataset_version: str = "v0.3",
+        hardware: str = "DGX Spark",
+        status: str = "completed",
+        overall_score: Optional[float] = None,
+        accuracy_pct: Optional[float] = None,
+        concept_recall_pct: Optional[float] = None,
+        total_cases: int = 0,
+        passed_cases: int = 0,
+        train_loss: Optional[float] = None,
+        eval_loss: Optional[float] = None,
+        step: Optional[int] = None,
+        epoch: Optional[float] = None,
+        category_scores: Optional[Dict[str, Any]] = None,
+        metrics: Optional[Dict[str, Any]] = None,
+        commit_sha: str = "",
+        source: str = "webhook",
+        notes: str = "",
+        started_at: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        rid = str(run_id).strip()
+        mname = str(model_name).strip()
+        if not rid or not mname:
+            raise ValueError("run_id and model_name are required")
+
+        now = created_at or utc_now_iso()
+        norm_status = str(status or "completed").strip().lower()
+        if norm_status not in ("running", "completed", "failed", "queued"):
+            norm_status = "completed"
+
+        # Derive accuracy_pct from passed_cases / total_cases if omitted
+        if accuracy_pct is None and total_cases and total_cases > 0:
+            accuracy_pct = round((passed_cases / total_cases) * 100.0, 2)
+        if overall_score is None and accuracy_pct is not None:
+            overall_score = accuracy_pct
+
+        cat_json = json.dumps(category_scores or {}, sort_keys=True)
+        met_json = json.dumps(metrics or {}, sort_keys=True)
+
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO eval_runs (
+                    run_id, model_name, model_family, dataset_version, hardware,
+                    status, overall_score, accuracy_pct, concept_recall_pct,
+                    total_cases, passed_cases, train_loss, eval_loss, step, epoch,
+                    category_scores_json, metrics_json, commit_sha, source, notes,
+                    started_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    model_name = excluded.model_name,
+                    model_family = excluded.model_family,
+                    dataset_version = excluded.dataset_version,
+                    hardware = excluded.hardware,
+                    status = excluded.status,
+                    overall_score = excluded.overall_score,
+                    accuracy_pct = excluded.accuracy_pct,
+                    concept_recall_pct = excluded.concept_recall_pct,
+                    total_cases = excluded.total_cases,
+                    passed_cases = excluded.passed_cases,
+                    train_loss = excluded.train_loss,
+                    eval_loss = excluded.eval_loss,
+                    step = excluded.step,
+                    epoch = excluded.epoch,
+                    category_scores_json = excluded.category_scores_json,
+                    metrics_json = excluded.metrics_json,
+                    commit_sha = excluded.commit_sha,
+                    source = excluded.source,
+                    notes = excluded.notes,
+                    started_at = COALESCE(excluded.started_at, eval_runs.started_at)
+                """,
+                (
+                    rid,
+                    mname,
+                    str(model_family or "").strip(),
+                    str(dataset_version or "v0.3").strip(),
+                    str(hardware or "DGX Spark").strip(),
+                    norm_status,
+                    overall_score,
+                    accuracy_pct,
+                    concept_recall_pct,
+                    int(total_cases or 0),
+                    int(passed_cases or 0),
+                    train_loss,
+                    eval_loss,
+                    step,
+                    epoch,
+                    cat_json,
+                    met_json,
+                    str(commit_sha or "").strip(),
+                    str(source or "webhook").strip(),
+                    str(notes or "").strip(),
+                    started_at or now,
+                    now,
+                ),
+            )
+        return self.get_eval_run(rid)  # type: ignore[return-value]
+
+    def get_eval_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM eval_runs WHERE run_id = ?",
+                (run_id.strip(),),
+            ).fetchone()
+        return self._decode_eval_run(row) if row else None
+
+    def list_eval_runs(
+        self,
+        model_name: Optional[str] = None,
+        dataset_version: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        clauses = []
+        params: List[Any] = []
+        if model_name and model_name != "ALL":
+            clauses.append("model_name = ?")
+            params.append(model_name)
+        if dataset_version and dataset_version != "ALL":
+            clauses.append("dataset_version = ?")
+            params.append(dataset_version)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM eval_runs
+                {where_sql}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._decode_eval_run(r) for r in rows]
+
+    def get_eval_summary(self) -> Dict[str, Any]:
+        runs = self.list_eval_runs(limit=250)
+        models = sorted({r["model_name"] for r in runs})
+        datasets = sorted({r["dataset_version"] for r in runs})
+        scored = [r for r in runs if r["overall_score"] is not None]
+        best_run = max(scored, key=lambda r: float(r["overall_score"])) if scored else None
+
+        # Leaderboard: best completed (or latest) run per model_name
+        best_by_model: Dict[str, Dict[str, Any]] = {}
+        for r in runs:
+            m = r["model_name"]
+            prev = best_by_model.get(m)
+            r_score = float(r["overall_score"]) if r["overall_score"] is not None else -1.0
+            p_score = float(prev["overall_score"]) if (prev and prev["overall_score"] is not None) else -1.0
+            if prev is None or r_score > p_score:
+                best_by_model[m] = r
+
+        leaderboard = sorted(
+            best_by_model.values(),
+            key=lambda r: (
+                -(float(r["overall_score"]) if r["overall_score"] is not None else -1.0),
+                r["model_name"],
+            ),
+        )
+
+        # Chronological progression for charting
+        series = list(reversed(runs))
+        return {
+            "total_runs": len(runs),
+            "active_runs": sum(1 for r in runs if r["status"] == "running"),
+            "models_count": len(models),
+            "models": models,
+            "datasets": datasets,
+            "latest_dataset": datasets[-1] if datasets else "--",
+            "best_score": best_run["overall_score"] if best_run else None,
+            "best_model": best_run["model_name"] if best_run else None,
+            "leaderboard": leaderboard,
+            "series": series[-60:],
+        }
+
+    @staticmethod
+    def _decode_eval_run(row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "model_name": row["model_name"],
+            "model_family": row["model_family"],
+            "dataset_version": row["dataset_version"],
+            "hardware": row["hardware"],
+            "status": row["status"],
+            "overall_score": row["overall_score"],
+            "accuracy_pct": row["accuracy_pct"],
+            "concept_recall_pct": row["concept_recall_pct"],
+            "total_cases": row["total_cases"],
+            "passed_cases": row["passed_cases"],
+            "train_loss": row["train_loss"],
+            "eval_loss": row["eval_loss"],
+            "step": row["step"],
+            "epoch": row["epoch"],
+            "category_scores": json.loads(row["category_scores_json"] or "{}"),
+            "metrics": json.loads(row["metrics_json"] or "{}"),
+            "commit_sha": row["commit_sha"],
+            "source": row["source"],
+            "notes": row["notes"],
+            "started_at": row["started_at"],
+            "created_at": row["created_at"],
         }
