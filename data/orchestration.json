@@ -1,25 +1,34 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "title": "IPX Content IP Intelligence — Software & Hardware Orchestration",
   "subtitle": "End-to-end zero-leakage flywheel from live t0 signal capture to model training, studio broadcast, and content distribution.",
   "hardware": [
     {
       "id": "hw-cloud-host",
-      "name": "Cloud App Host (Railway / Render)",
+      "name": "Railway Cloud Host (Live)",
       "role": "Always-On Command Center & SQLite WAL Volume",
-      "specs": "Python 3.12 · Persistent Volume (/data) · HTTPS",
+      "specs": "Python 3.12 · Persistent Volume (/data) · ipx-command-center-production.up.railway.app",
       "status": "online",
-      "hosts_software": ["sw-terminal", "sw-hub"],
+      "hosts_software": ["sw-terminal", "sw-live"],
       "description": "Serves the 4-tab IPX Command Center (Eval Tracking, Terminal, Orchestration, Updates) with public read-only viewing and passcode-protected writes."
     },
     {
+      "id": "hw-mac-workstation",
+      "name": "Mac Operator Workstation",
+      "role": "Daily Flywheel Runner, Local Evals & Repo Sync",
+      "specs": "macOS · IPX Terminal CLI · Frontier API Evals",
+      "status": "online",
+      "hosts_software": ["sw-terminal", "sw-eval"],
+      "description": "Runs the daily GDELT / ScrapeCreators / Polymarket morning flywheel, resolves 48–72h predictions, and runs frontier model IPX-Eval sweeps until DGX Spark arrives."
+    },
+    {
       "id": "hw-dgx-spark",
-      "name": "NVIDIA DGX Spark",
-      "role": "Model Training, Fine-Tuning & IPX-Eval Harness",
-      "specs": "GB10 Grace Blackwell · 128GB Unified Memory",
-      "status": "active",
+      "name": "NVIDIA DGX Spark (Incoming)",
+      "role": "Dedicated Model Training, Fine-Tuning & Local Eval Harness",
+      "specs": "GB10 Grace Blackwell · 128GB Unified Memory · Pending Delivery",
+      "status": "planned",
       "hosts_software": ["sw-eval", "sw-trainer"],
-      "description": "Runs local open-weight & fine-tuned Content IP models against IPX-Eval benchmarks and pushes live training/eval run metrics to POST /api/evals/runs."
+      "description": "Planned dedicated training node for fine-tuning specialist Content IP models on IPX-Eval datasets and streaming live run metrics to POST /api/evals/runs."
     },
     {
       "id": "hw-b200",
@@ -61,13 +70,13 @@
       "name": "IPX-Eval",
       "layer": "benchmark_and_training",
       "repo": "https://github.com/Beef1498/IPX-eval",
-      "hardware_id": "hw-dgx-spark",
-      "cadence": "Per dataset version (v0.1–v0.4+) & nightly model sweeps",
+      "hardware_id": "hw-mac-workstation",
+      "cadence": "Per dataset version (v0.1–v0.4+) & model sweeps",
       "stack": "Python Eval Harness · eval_case.schema.json · JSONL datasets",
       "responsibilities": [
         "Maintains contamination-proof Content IP benchmark datasets (breakout, lineage, contagion, ip_catalyst)",
-        "Grades frontier & local DGX Spark models on label accuracy and required concept recall",
-        "Publishes run artifacts to GitHub and pushes live run telemetry to the Eval Tracking tab"
+        "Grades frontier & local models on label accuracy and required concept recall",
+        "Publishes run artifacts to GitHub and pushes live run telemetry via scripts/push_eval_run.py"
       ]
     },
     {
@@ -76,7 +85,7 @@
       "layer": "benchmark_and_training",
       "repo": "https://github.com/Beef1498/IPX-eval",
       "hardware_id": "hw-dgx-spark",
-      "cadence": "Continuous iteration on resolved 48–72h outcomes",
+      "cadence": "Continuous iteration on resolved 48–72h outcomes (starts on DGX Spark arrival)",
       "stack": "DGX Spark · SFT / DPO / Blind A-B Preference Pairs",
       "responsibilities": [
         "Trains specialist Content IP forecasting models on resolved Terminal outcomes & blind creator A/B pairs",
@@ -121,13 +130,13 @@
     },
     {
       "from": "IPX Terminal",
-      "to": "IPX-Eval (DGX Spark)",
+      "to": "IPX-Eval (Mac → DGX Spark)",
       "payload": "eval_case.schema.json validated JSONL",
       "cadence": "After 48–72h ground-truth resolution",
       "guardrail": "Zero future leakage — t0 snapshot never mutated"
     },
     {
-      "from": "IPX-Eval & Training Runs (DGX Spark)",
+      "from": "IPX-Eval & Training Runs",
       "to": "Command Center (Eval Tracking Tab)",
       "payload": "Run JSON (overall_score, category_scores, train_loss, eval_loss)",
       "cadence": "Live webhook POST /api/evals/runs + GitHub auto-sync",

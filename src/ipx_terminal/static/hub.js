@@ -617,7 +617,7 @@ function renderOrchestrationView() {
                 return `<div class="node-card ${sel ? "selected" : ""}" data-hw-id="${esc(h.id)}">
                   <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
                     <span class="node-title">${esc(h.name)}</span>
-                    <span class="pill green">${esc(h.status || "active")}</span>
+                    <span class="pill ${h.status === "planned" ? "amber" : "green"}">${esc(h.status || "active")}</span>
                   </div>
                   <div class="node-role">${esc(h.role)}</div>
                   <div class="node-specs">${esc(h.specs)}</div>
