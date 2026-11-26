@@ -165,10 +165,10 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     return
 
                 if path == "/api/markets":
-                    q_text = params.get("q", [""])[0]
-                    src = params.get("source", ["all"])[0]
-                    ip_only = params.get("ip_only", ["1"])[0].lower() not in ("0", "false", "no")
-                    lim = int(params.get("limit", ["24"])[0])
+                    q_text = qs.get("q", [""])[0]
+                    src = qs.get("source", ["all"])[0]
+                    ip_only = qs.get("ip_only", ["1"])[0].lower() not in ("0", "false", "no")
+                    lim = int(qs.get("limit", ["24"])[0])
                     data = fetch_prediction_markets(source=src, query=q_text, ip_only=ip_only, limit=lim)
                     self._send_json({"ok": True, **data})
                     return
