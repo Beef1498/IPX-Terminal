@@ -515,6 +515,19 @@ def build_creator_ab_pairs(
     return pairs
 
 
+def _load_seen_pair_urls(target_dir: Path) -> set:
+    """Collect post URLs already used in existing creative_ab JSONL files to avoid duplicates."""
+    seen = set()
+    if not target_dir.exists():
+        return seen
+    url_re = re.compile(r"https?://[^\s|\"']+")
+    for f in target_dir.glob("*.jsonl"):
+        for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            for match in url_re.findall(line):
+                seen.add(match.rstrip(".,)"))
+    return seen
+
+
 def auto_pair_creator_ab(
     platform: str,
     handle: str,
@@ -525,6 +538,8 @@ def auto_pair_creator_ab(
     version: str = "0.5",
     api_key: Optional[str] = None,
     base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+    dedupe: bool = False,
+    append: bool = False,
 ) -> Dict[str, Any]:
     """1-click ScrapeCreators creator fetch -> balanced blind Winner-vs-Flop JSONL export."""
     posts = fetch_scrapecreators_creator_posts(
@@ -533,9 +548,21 @@ def auto_pair_creator_ab(
         api_key=api_key,
         base_url=base_url,
     )
-    sibling_eval_dir = PROJECT_ROOT.parent / "IPX-Eval" / "datasets" / "v0.5-creative"
+    sibling_eval_dir = PROJECT_ROOT.parent / "IPX-Eval" / "datasets" / "v0.5-creative-real"
     target_dir = Path(out_dir) if out_dir else (sibling_eval_dir if sibling_eval_dir.parent.exists() else (DEFAULT_EXPORT_DIR / "creative-feedback"))
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    skipped_seen = 0
+    if dedupe:
+        seen_urls = _load_seen_pair_urls(target_dir)
+        fresh_posts = []
+        for p in posts:
+            u = str(p.get("url") or "").strip()
+            if u and u in seen_urls:
+                skipped_seen += 1
+                continue
+            fresh_posts.append(p)
+        posts = fresh_posts
 
     # Pick a non-colliding starting ID based on existing creative_ab cases in target_dir
     max_existing = 100
@@ -560,18 +587,120 @@ def auto_pair_creator_ab(
     slug_handle = re.sub(r"[^a-z0-9]+", "_", handle.lower().lstrip("@")).strip("_") or "creator"
     out_path = target_dir / f"creator_{slug_plat}_{slug_handle}.jsonl"
     if pairs:
-        out_path.write_text(
-            "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs) + "\n",
-            encoding="utf-8",
-        )
+        serialized = "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs) + "\n"
+        if append and out_path.exists():
+            with out_path.open("a", encoding="utf-8") as fh:
+                fh.write(serialized)
+        else:
+            out_path.write_text(serialized, encoding="utf-8")
 
     return {
         "platform": platform,
         "handle": f"@{handle.strip().lstrip('@')}",
         "posts_fetched": len(posts),
+        "skipped_seen": skipped_seen,
         "pairs_created": len(pairs),
         "out_path": str(out_path) if pairs else None,
         "pairs": pairs,
+    }
+
+
+DEFAULT_CREATOR_WATCHLIST = PROJECT_ROOT / "data" / "creator_watchlist.json"
+
+
+def rotate_creator_watchlist(
+    watchlist_path: Optional[Path] = None,
+    out_dir: Optional[Path] = None,
+    limit: int = 6,
+    pairs_per_creator: int = 4,
+    min_ratio: float = 2.0,
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+) -> Dict[str, Any]:
+    """Pull the least-recently-pulled creators from creator_watchlist.json with URL deduplication."""
+    wl_path = Path(watchlist_path) if watchlist_path else DEFAULT_CREATOR_WATCHLIST
+    if not wl_path.is_file():
+        raise FileNotFoundError(f"Creator watchlist not found: {wl_path}")
+
+    entries = json.loads(wl_path.read_text(encoding="utf-8"))
+    ordered_idx = sorted(range(len(entries)), key=lambda i: str(entries[i].get("last_pulled_at") or ""))
+    chosen_indices = ordered_idx[: max(1, limit)]
+
+    results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    total_pairs = 0
+    now_iso = utc_now_iso()
+
+    for idx in chosen_indices:
+        item = entries[idx]
+        try:
+            res = auto_pair_creator_ab(
+                platform=str(item["platform"]),
+                handle=str(item["handle"]),
+                sector=str(item.get("sector", "CREATORS")),
+                max_pairs=pairs_per_creator,
+                min_ratio=min_ratio,
+                out_dir=out_dir,
+                api_key=api_key,
+                base_url=base_url,
+                dedupe=True,
+                append=True,
+            )
+            entries[idx]["last_pulled_at"] = now_iso
+            total_pairs += res["pairs_created"]
+            results.append(
+                {
+                    "platform": res["platform"],
+                    "handle": res["handle"],
+                    "sector": item.get("sector", "CREATORS"),
+                    "fresh_posts": res["posts_fetched"],
+                    "skipped_seen": res["skipped_seen"],
+                    "pairs_created": res["pairs_created"],
+                }
+            )
+        except Exception as exc:
+            errors.append(f"{item.get('platform')} @{item.get('handle')}: {exc}")
+
+    wl_path.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
+    return {
+        "watchlist_path": str(wl_path),
+        "creators_checked": len(chosen_indices),
+        "total_new_pairs": total_pairs,
+        "results": results,
+        "errors": errors,
+    }
+
+
+def recheck_overdue_predictions(
+    db: TerminalDB,
+    api_key: Optional[str] = None,
+    base_url: str = DEFAULT_SCRAPECREATORS_BASE_URL,
+) -> Dict[str, Any]:
+    """Auto-recheck live social metrics for all overdue 48-72h pending predictions with tracked URLs."""
+    overdue = [p for p in db.list_predictions(status="pending", limit=200) if p["overdue"]]
+    checked: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    errors: List[str] = []
+
+    for pred in overdue:
+        t0_metrics = dict(pred.get("signal_snapshot", {}).get("metrics") or {})
+        sig = db.get_signal(pred["signal_id"])
+        url = str(t0_metrics.get("url") or (sig or {}).get("url") or "").strip()
+        if not url:
+            skipped.append(pred["case_code"])
+            continue
+        try:
+            res = recheck_prediction_metrics(db=db, prediction_id=pred["id"], api_key=api_key, base_url=base_url)
+            checked.append(res)
+        except Exception as exc:
+            errors.append(f"{pred['case_code']}: {exc}")
+
+    return {
+        "overdue_count": len(overdue),
+        "checked_count": len(checked),
+        "checked": checked,
+        "skipped_no_url": skipped,
+        "errors": errors,
     }
 
 

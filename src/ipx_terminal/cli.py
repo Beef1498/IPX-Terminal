@@ -24,7 +24,9 @@ from ipx_terminal.ingest import (
     ingest_gdelt,
     ingest_url,
     ingest_youtube,
+    recheck_overdue_predictions,
     recheck_prediction_metrics,
+    rotate_creator_watchlist,
     seed_demo_workspace,
     sweep_watchlist,
 )
@@ -126,6 +128,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_mkts.add_argument("--query", default="", help="Optional keyword filter.")
     p_mkts.add_argument("--all-categories", action="store_true", help="Include non-IP/culture markets too.")
     p_mkts.add_argument("--limit", type=int, default=15)
+
+    p_rot = sub.add_parser(
+        "rotate-ab",
+        help="Pull least-recently-updated creators from data/creator_watchlist.json with URL deduplication.",
+    )
+    p_rot.add_argument("--limit", type=int, default=6, help="Creators to pull per rotation (default: 6).")
+    p_rot.add_argument("--pairs", type=int, default=4, help="Max new pairs per creator (default: 4).")
+    p_rot.add_argument("--min-ratio", type=float, default=2.0)
+    p_rot.add_argument("--watchlist", type=Path, default=None)
+    p_rot.add_argument("--out-dir", type=Path, default=None)
+
+    sub.add_parser(
+        "recheck-due",
+        help="Auto-recheck live ScrapeCreators metrics for all overdue 48-72h pending predictions.",
+    )
 
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
@@ -373,6 +390,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         if res["errors"]:
             for err in res["errors"]:
                 print(f"  ! {err}")
+        return 0
+
+    if args.command == "rotate-ab":
+        res = rotate_creator_watchlist(
+            watchlist_path=args.watchlist,
+            out_dir=args.out_dir,
+            limit=args.limit,
+            pairs_per_creator=args.pairs,
+            min_ratio=args.min_ratio,
+        )
+        print(f"Rotated {res['creators_checked']} creators -> +{res['total_new_pairs']} new deduplicated blind A/B pairs")
+        for r in res["results"]:
+            print(
+                f"  - {r['sector']:<9} {r['platform']:<16} {r['handle']:<18} "
+                f"fresh={r['fresh_posts']:>2}  skipped={r['skipped_seen']:>2}  +pairs={r['pairs_created']}"
+            )
+        for err in res["errors"]:
+            print(f"  ! {err}")
+        return 0
+
+    if args.command == "recheck-due":
+        res = recheck_overdue_predictions(db=db)
+        print(f"Overdue 48-72h predictions: {res['overdue_count']} (rechecked={res['checked_count']}, no_url={len(res['skipped_no_url'])})")
+        for item in res["checked"]:
+            print(f"  - {item['case_code']} [{item['ticker']}] provider={item['provider']} deltas={item['deltas']}")
+        for err in res["errors"]:
+            print(f"  ! {err}")
         return 0
 
     if args.command == "serve":

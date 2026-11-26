@@ -409,6 +409,28 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertEqual(sig["metrics"]["yes_pct"], 62.0)
         self.assertEqual(sig["metrics"]["market_source"], "Polymarket")
 
+    def test_rotate_creator_watchlist_deduplicates_urls(self) -> None:
+        from ipx_terminal.ingest import rotate_creator_watchlist
+
+        wl_path = Path(self._tmp.name) / "watchlist.json"
+        wl_path.write_text(
+            json.dumps([{"platform": "TikTok", "handle": "alpha", "sector": "CREATORS", "last_pulled_at": ""}]),
+            encoding="utf-8",
+        )
+        out_dir = Path(self._tmp.name) / "v05-real"
+        fake_feed = {
+            "aweme_list": [
+                {"aweme_id": "10", "desc": "Hit post", "statistics": {"play_count": 500000}},
+                {"aweme_id": "11", "desc": "Flop post", "statistics": {"play_count": 5000}},
+            ]
+        }
+        with mock.patch("ipx_terminal.ingest._http_get_json", return_value=fake_feed):
+            first = rotate_creator_watchlist(watchlist_path=wl_path, out_dir=out_dir, limit=1, pairs_per_creator=2, api_key="k")
+            second = rotate_creator_watchlist(watchlist_path=wl_path, out_dir=out_dir, limit=1, pairs_per_creator=2, api_key="k")
+        self.assertEqual(first["total_new_pairs"], 1)
+        self.assertEqual(second["total_new_pairs"], 0)
+        self.assertEqual(second["results"][0]["skipped_seen"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
