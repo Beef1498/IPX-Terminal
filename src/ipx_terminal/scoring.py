@@ -88,35 +88,45 @@ def compute_velocity_and_contagion(
     save_rate_pct = _safe_float(metrics.get("save_rate_pct"))
     unique_creators = _safe_float(
         metrics.get("unique_creators_using_sound")
-        or metrics.get("unique_creators")
+        or metrics.get("derivative_videos")
         or metrics.get("matching_clips_24h")
+        or metrics.get("unique_creators")
     )
     gdelt_articles = _safe_float(metrics.get("gdelt_articles") or metrics.get("article_count"))
     google_trends = _safe_float(metrics.get("google_trends_index"))
     overlap_pct = _safe_float(metrics.get("x_audience_overlap_pct"), default=-1.0)
     paid_boost = bool(metrics.get("paid_boost_detected", False))
 
-    # 1. Breakout / engagement component (0..45)
+    distinct_platforms = len({p.strip().lower() for p in platforms if p.strip()})
+    bucket_count = _classify_platform_buckets(platforms)
+
+    # 1. Breakout / early transmission component (0..45)
+    # Hierarchy: Share-to-Like Ratio & Breakout Multiplier > Raw Solo Likes/Views
     breakout_pts = 0.0
     if breakout_ratio > 0:
-        breakout_pts += min(25.0, math.log1p(breakout_ratio) * 9.5)
+        breakout_pts += min(22.0, math.log1p(breakout_ratio) * 8.5)
     elif views > 0:
-        breakout_pts += min(18.0, math.log10(max(10.0, views)) * 3.0)
+        breakout_pts += min(12.0, math.log10(max(10.0, views)) * 2.0)
     elif likes > 0:
-        breakout_pts += min(16.0, math.log10(max(10.0, likes)) * 3.0)
+        breakout_pts += min(10.0, math.log10(max(10.0, likes)) * 2.0)
 
     if share_to_like > 0:
-        breakout_pts += min(15.0, share_to_like * 35.0)
+        # Share-to-like is the #1 early leading indicator of active social transmission at t_0
+        breakout_pts += min(20.0, share_to_like * 45.0)
     if save_rate_pct > 0:
-        breakout_pts += min(10.0, save_rate_pct * 2.0)
+        breakout_pts += min(8.0, save_rate_pct * 1.8)
     if comments > 0 and likes > 0:
-        breakout_pts += min(5.0, (comments / likes) * 40.0)
+        breakout_pts += min(4.0, (comments / likes) * 30.0)
+    # Discount passive solo-video likes/views when there is no remix wave and low share velocity
+    if unique_creators <= 1 and share_to_like < 0.10 and distinct_platforms <= 1 and gdelt_articles == 0:
+        breakout_pts = min(breakout_pts, 18.0)
     breakout_pts = min(45.0, breakout_pts)
 
-    # 2. Creator / remix breadth component (0..25)
+    # 2. Derivative / remix participation & news breadth component (0..25)
+    # Hierarchy: Independent derivative videos/remakes are the #1 confirmation of real breakout
     breadth_pts = 0.0
     if unique_creators > 0:
-        breadth_pts += min(18.0, math.log1p(unique_creators) * 4.5)
+        breadth_pts += min(22.0, math.log1p(unique_creators) * 5.8)
     if gdelt_articles > 0:
         breadth_pts += min(12.0, math.log1p(gdelt_articles) * 4.0)
     if google_trends > 0:
@@ -124,21 +134,24 @@ def compute_velocity_and_contagion(
     breadth_pts = min(25.0, breadth_pts)
 
     # 3. Cross-platform contagion component (0..30 for CVS, 0..100 for Contagion Index)
-    distinct_platforms = len({p.strip().lower() for p in platforms if p.strip()})
-    bucket_count = _classify_platform_buckets(platforms)
-
     contagion = 12.0 * min(distinct_platforms, 5) + 14.0 * min(bucket_count, 4)
+    if unique_creators >= 10:
+        contagion += min(18.0, math.log1p(unique_creators) * 4.2)
+    elif unique_creators >= 3:
+        contagion += 8.0
     if gdelt_articles >= 5:
         contagion += min(18.0, math.log1p(gdelt_articles) * 5.0)
     if google_trends >= 20:
         contagion += min(16.0, google_trends * 0.2)
     if share_to_like >= 0.20:
-        contagion += 10.0
+        contagion += 14.0
+    elif share_to_like >= 0.10:
+        contagion += 6.0
     if overlap_pct >= 75.0:
         contagion -= 25.0
     elif 0 <= overlap_pct <= 35.0:
         contagion += 10.0
-    if distinct_platforms <= 1 and gdelt_articles == 0 and google_trends < 15:
+    if distinct_platforms <= 1 and unique_creators < 5 and gdelt_articles == 0 and google_trends < 15:
         contagion = min(contagion, 32.0)
     contagion_index = round(max(0.0, min(100.0, contagion)), 1)
 
