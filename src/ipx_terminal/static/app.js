@@ -18,11 +18,13 @@ const state = {
   markets: [],
   marketsLoaded: false,
   marketsSource: "all",
+  marketsSector: "ALL",
   marketsQuery: "",
   marketsIpOnly: true,
   mapData: null,
   mapLoaded: false,
   mapQuery: "",
+  mapHideNoise: true,
   mapSelectedClusterIdx: 0,
   mapSelectedState: null,
 };
@@ -419,76 +421,115 @@ function renderDesk() {
   }
 
   if (state.activeTab === "MKTS") {
+    const fmtUsd = (v) => {
+      const n = Number(v || 0);
+      if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+      if (n >= 1_000) return `$${Math.round(n / 1_000)}K`;
+      return `$${Math.round(n)}`;
+    };
+    const fmtEnd = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    };
+    const sectorChips = ["ALL", "SPORTS", "DEALS", "POP", "MUSIC", "FILM_TV", "GAMING"].map((sec) => {
+      const active = state.marketsSector === sec;
+      return `<button type="button" class="btn-action ${active ? "amber" : ""}" data-mkts-sector="${sec}" style="font-size:10px;padding:2px 7px">${sec === "ALL" ? "ALL IP" : sec}</button>`;
+    }).join("");
+    const sourceBtns = [
+      ["all", "All"],
+      ["polymarket", "Polymarket"],
+      ["kalshi", "Kalshi"],
+    ].map(([val, lbl]) => `<button type="button" class="btn-action ${state.marketsSource === val ? "cyan" : ""}" data-mkts-src="${val}" style="font-size:10px;padding:2px 7px">${lbl}</button>`).join("");
+
     const controls = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <span style="font-family:monospace;font-size:11px;color:#94a3b8">LIVE PREDICTION MARKETS · POLYMARKET &amp; KALSHI (${state.markets.length})</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-          <input id="mkts-query" value="${esc(state.marketsQuery)}" placeholder="Filter (e.g. GTA, Oscar, NFL)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:165px" />
-          <select id="mkts-source" style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 6px;border-radius:3px;font-size:11px">
-            <option value="all" ${state.marketsSource === "all" ? "selected" : ""}>ALL</option>
-            <option value="polymarket" ${state.marketsSource === "polymarket" ? "selected" : ""}>Polymarket</option>
-            <option value="kalshi" ${state.marketsSource === "kalshi" ? "selected" : ""}>Kalshi</option>
-          </select>
-          <label style="font-family:monospace;font-size:10.5px;color:#94a3b8;display:flex;align-items:center;gap:4px">
-            <input type="checkbox" id="mkts-ip-only" ${state.marketsIpOnly ? "checked" : ""} /> IP/Culture
-          </label>
-          <button type="button" class="btn-action cyan" id="btn-refresh-mkts">Fetch Live Odds</button>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:7px;line-height:1.4">
+        Live real-money odds from <b style="color:#38bdf8">Polymarket</b> &amp; <b style="color:#34d399">Kalshi</b> (settled 99%+ markets hidden). Click <b>Freeze t₀</b> to lock odds into <b>WIRE</b> &amp; compare against social velocity.
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${sourceBtns}</div>
+        <div style="display:flex;gap:5px;align-items:center">
+          <input id="mkts-query" value="${esc(state.marketsQuery)}" placeholder="Search (e.g. GTA, Oscar, NBA)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:165px" />
+          <button type="button" class="btn-action cyan" id="btn-refresh-mkts" style="font-size:10.5px;padding:3px 8px">Refresh</button>
         </div>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        ${sectorChips}
+        <label style="font-family:monospace;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:4px;margin-left:auto">
+          <input type="checkbox" id="mkts-ip-only" ${state.marketsIpOnly ? "checked" : ""} /> IP/Culture only
+        </label>
       </div>
     `;
     const listHtml = state.markets.length
       ? state.markets
           .map((m, idx) => {
-            const pct = m.yes_pct != null ? `${m.yes_pct}% YES` : "n/a";
-            const barW = m.yes_pct != null ? Math.max(2, Math.min(100, m.yes_pct)) : 0;
+            const yesVal = m.yes_pct != null ? Number(m.yes_pct) : null;
+            const noVal = yesVal != null ? Math.max(0, Math.round((100 - yesVal) * 10) / 10) : null;
+            const barW = yesVal != null ? Math.max(2, Math.min(100, yesVal)) : 0;
             const srcColor = m.source === "Polymarket" ? "#38bdf8" : "#34d399";
+            const endTxt = fmtEnd(m.end_date);
             return `
-              <div class="pred-card">
-                <div class="pred-head">
-                  <span><b style="color:${srcColor}">${esc(m.source.toUpperCase())}</b> · <span class="pill">${esc(m.sector)}</span> · <span style="color:#94a3b8">24h Vol: $${Math.round(m.volume_24h || 0).toLocaleString()}</span></span>
-                  <span style="font-family:monospace;font-weight:700;color:#f59e0b">${pct}</span>
+              <div class="pred-card" style="padding:8px 10px">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-family:monospace;font-size:10px;color:#94a3b8;margin-bottom:3px">
+                      <b style="color:${srcColor}">${esc(m.source.toUpperCase())}</b> · <span class="pill" style="font-size:9.5px">${esc(m.sector)}</span> · 24h Vol <b style="color:#e2e8f0">${fmtUsd(m.volume_24h)}</b>${endTxt ? ` · Ends ${endTxt}` : ""}
+                    </div>
+                    <div style="font-weight:600;font-size:12.5px;color:#f1f5f9;line-height:1.3">${esc(m.title)}</div>
+                  </div>
+                  <div style="text-align:right;shrink:0;font-family:monospace">
+                    <div style="font-size:15px;font-weight:800;color:${yesVal != null && yesVal >= 50 ? "#34d399" : "#f59e0b"}">${yesVal != null ? `${yesVal}%` : "n/a"}</div>
+                    <div style="font-size:9.5px;color:#64748b">${noVal != null ? `NO ${noVal}%` : "YES ODDS"}</div>
+                  </div>
                 </div>
-                <div style="font-weight:600;margin:4px 0">${esc(m.title)}</div>
-                <div style="width:100%;height:5px;background:#070a0f;border:1px solid #1e293b;border-radius:99px;overflow:hidden;margin:4px 0 7px">
+                <div style="width:100%;height:6px;background:#1e293b;border-radius:99px;overflow:hidden;margin:7px 0">
                   <div style="width:${barW}%;height:100%;background:${srcColor}"></div>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
-                  <a href="${esc(m.url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:10.5px;color:#60a5fa;text-decoration:none">Open Market ↗</a>
-                  <button type="button" class="btn-action amber" data-freeze-market="${idx}">Freeze t₀ Signal</button>
+                  <a href="${esc(m.url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:10.5px;color:#60a5fa;text-decoration:none">View on ${esc(m.source)} ↗</a>
+                  <button type="button" class="btn-action amber" data-freeze-market="${idx}" style="font-size:10.5px;padding:3px 8px">Freeze t₀ Signal</button>
                 </div>
               </div>
             `;
           })
           .join("")
-      : `<div style="color:#8b9bb0;font-size:12px">${state.marketsLoaded ? "No matching markets found. Try unchecking IP/Culture or clearing the filter." : "Loading live Polymarket & Kalshi odds..."}</div>`;
+      : `<div style="color:#8b9bb0;font-size:12px;padding:10px;background:#090f19;border:1px solid #1e293b;border-radius:4px">${state.marketsLoaded ? "No active live-odds markets match this filter. Try clicking <b>ALL IP</b> or unchecking <b>IP/Culture only</b>." : "Loading live Polymarket & Kalshi odds..."}</div>`;
 
     body.innerHTML = controls + listHtml;
     const runFetch = async () => {
-      state.marketsQuery = document.getElementById("mkts-query").value.trim();
-      state.marketsSource = document.getElementById("mkts-source").value;
-      state.marketsIpOnly = document.getElementById("mkts-ip-only").checked;
+      state.marketsQuery = document.getElementById("mkts-query")?.value.trim() || "";
+      state.marketsIpOnly = document.getElementById("mkts-ip-only")?.checked ?? true;
       const btn = document.getElementById("btn-refresh-mkts");
       if (btn) { btn.disabled = true; btn.textContent = "Loading..."; }
       try {
         const qs = new URLSearchParams({
           source: state.marketsSource,
+          sector: state.marketsSector,
           q: state.marketsQuery,
           ip_only: state.marketsIpOnly ? "1" : "0",
+          live_only: "1",
           limit: "24",
         });
         const res = await api(`/api/markets?${qs.toString()}`);
         state.markets = res.markets || [];
         state.marketsLoaded = true;
-        setStatus(`Loaded ${state.markets.length} live Polymarket/Kalshi markets`);
+        setStatus(`Loaded ${state.markets.length} live-odds markets (${state.marketsSource.toUpperCase()} · ${state.marketsSector})`);
         renderDesk();
       } catch (err) {
         setStatus(err.message, true);
-        if (btn) { btn.disabled = false; btn.textContent = "Fetch Live Odds"; }
+        if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
       }
     };
     document.getElementById("btn-refresh-mkts").addEventListener("click", runFetch);
+    document.getElementById("mkts-ip-only").addEventListener("change", runFetch);
     document.getElementById("mkts-query").addEventListener("keydown", (e) => {
       if (e.key === "Enter") runFetch();
+    });
+    body.querySelectorAll("[data-mkts-src]").forEach((btn) => {
+      btn.addEventListener("click", () => { state.marketsSource = btn.dataset.mktsSrc; runFetch(); });
+    });
+    body.querySelectorAll("[data-mkts-sector]").forEach((btn) => {
+      btn.addEventListener("click", () => { state.marketsSector = btn.dataset.mktsSector; runFetch(); });
     });
     body.querySelectorAll("[data-freeze-market]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -535,45 +576,54 @@ function renderDesk() {
     const maxVal = Math.max(100, ...Object.values(activeTraffic).map(Number));
     const originSt = activeCluster?.origin_state || null;
 
-    const tileSvg = US_GRID.map(([code, col, row]) => {
-      const x = col * 42 + 4;
-      const y = row * 32 + 4;
-      const val = Number(activeTraffic[code] || 0);
-      const isOrigin = originSt && code === originSt;
-      const isSelected = state.mapSelectedState === code;
-      let fill = "#0c1320";
-      let stroke = "#1e293b";
-      let textCol = "#64748b";
-      if (val > 0) {
-        const ratio = val / maxVal;
-        if (isOrigin) {
-          fill = "#f59e0b";
-          stroke = "#fef08a";
-          textCol = "#090d16";
-        } else if (ratio >= 0.6) {
-          fill = "#0ea5e9";
-          stroke = "#7dd3fc";
-          textCol = "#04111d";
-        } else {
-          fill = "#164e63";
-          stroke = "#22d3ee";
-          textCol = "#e0f2fe";
+    const buildMapSvg = (maxH = 225) => {
+      const tiles = US_GRID.map(([code, col, row]) => {
+        const x = col * 42 + 4;
+        const y = row * 32 + 4;
+        const val = Number(activeTraffic[code] || 0);
+        const isOrigin = originSt && code === originSt;
+        const isSelected = state.mapSelectedState === code;
+        let fill = "#0c1320";
+        let stroke = "#1e293b";
+        let textCol = "#475569";
+        if (val > 0) {
+          const ratio = val / maxVal;
+          if (isOrigin) {
+            fill = "#f59e0b";
+            stroke = "#fef08a";
+            textCol = "#090d16";
+          } else if (ratio >= 0.55) {
+            fill = "#0ea5e9";
+            stroke = "#7dd3fc";
+            textCol = "#04111d";
+          } else {
+            fill = "#164e63";
+            stroke = "#22d3ee";
+            textCol = "#e0f2fe";
+          }
         }
-      }
-      if (isSelected) {
-        stroke = "#fb7185";
-      }
-      return `
-        <g data-map-state="${code}" style="cursor:pointer">
-          <rect x="${x}" y="${y}" width="38" height="28" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected || isOrigin ? 2 : 1}"></rect>
-          <text x="${x + 19}" y="${y + 17}" text-anchor="middle" fill="${textCol}" font-family="monospace" font-size="10.5" font-weight="700">${code}</text>
-        </g>
-      `;
-    }).join("");
+        if (isSelected) stroke = "#fb7185";
+        const tip = val > 0 ? `US-${code}: ${val.toLocaleString()}+ searches (click to inspect)` : `US-${code}: click to see local trends`;
+        return `
+          <g data-map-state="${code}" style="cursor:pointer">
+            <title>${esc(tip)}</title>
+            <rect x="${x}" y="${y}" width="38" height="28" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected || isOrigin ? 2.2 : 1}"></rect>
+            <text x="${x + 19}" y="${y + 17}" text-anchor="middle" fill="${textCol}" font-family="monospace" font-size="10.5" font-weight="700">${code}</text>
+          </g>
+        `;
+      }).join("");
+      return `<svg viewBox="0 0 470 264" style="width:100%;max-height:${maxH}px;display:block">${tiles}</svg>`;
+    };
 
-    const clusterPills = clusters.slice(0, 10).map((c, idx) => {
+    const clusterCards = clusters.slice(0, 6).map((c, idx) => {
       const isAct = idx === state.mapSelectedClusterIdx;
-      return `<button type="button" class="btn-action ${isAct ? "amber" : ""}" data-map-cluster="${idx}" style="font-size:10.5px;padding:3px 7px">${esc(c.topic.slice(0, 26))} (${c.state_count})</button>`;
+      const stageColor = c.state_count >= 12 ? "#f59e0b" : c.state_count >= 4 ? "#22d3ee" : "#94a3b8";
+      return `
+        <button type="button" data-map-cluster="${idx}" style="text-align:left;padding:6px 8px;border-radius:4px;cursor:pointer;background:${isAct ? "#132238" : "#0a101b"};border:1px solid ${isAct ? "#f59e0b" : "#1e293b"};color:#e2e8f0">
+          <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.topic)}</div>
+          <div style="font-family:monospace;font-size:9.5px;color:${stageColor};margin-top:2px">${c.state_count} states · Peak ${esc(c.origin_state)} · ${c.total_traffic.toLocaleString()}+</div>
+        </button>
+      `;
     }).join("");
 
     const selectedStateItems = state.mapSelectedState && md?.by_state?.[state.mapSelectedState]
@@ -581,32 +631,37 @@ function renderDesk() {
       : "";
 
     body.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <span style="font-family:monospace;font-size:11px;color:#94a3b8">US CULTURAL CONTAGION MAP · ${md ? `${md.states_loaded} STATES LIVE` : "LOADING..."}</span>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:7px;line-height:1.4">
+        Scans all <b style="color:#e2e8f0">50 US states + DC</b> live. Pick a trending cluster below to see where it ignited (<b style="color:#f59e0b">Amber = Peak Hub</b>) and where it spread (<b style="color:#38bdf8">Cyan</b>), or click any state tile.
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:5px;margin-bottom:7px;flex-wrap:wrap">
         <div style="display:flex;gap:5px;align-items:center">
-          <input id="map-query" value="${esc(state.mapQuery)}" placeholder="Filter trend (e.g. NFL, Black Friday)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:185px" />
-          <button type="button" class="btn-action cyan" id="btn-refresh-map">Scan 50 States</button>
+          <input id="map-query" value="${esc(state.mapQuery)}" placeholder="Search topic (e.g. NFL, NBA)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:165px" />
+          <label style="font-family:monospace;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="map-hide-noise" ${state.mapHideNoise ? "checked" : ""} /> Hide utility noise
+          </label>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button type="button" class="btn-action" id="btn-expand-map" style="font-size:10.5px;padding:3px 7px">Expand Map ⤢</button>
+          <button type="button" class="btn-action cyan" id="btn-refresh-map" style="font-size:10.5px;padding:3px 7px">Rescan 50 States</button>
         </div>
       </div>
-      ${clusters.length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${clusterPills}</div>` : ""}
+      ${clusters.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:5px;margin-bottom:8px">${clusterCards}</div>` : ""}
       ${activeCluster ? `
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;background:#090f19;border:1px solid #1e293b;border-radius:4px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;background:#090f19;border:1px solid #1e293b;border-radius:4px;margin-bottom:7px;flex-wrap:wrap">
           <span style="font-family:monospace;font-size:11px">
             <b style="color:#f59e0b">${esc(activeCluster.topic)}</b> ·
             <span style="color:#22d3ee">${activeCluster.state_count} states</span> ·
-            Peak/Origin: <b style="color:#fbbf24">${esc(activeCluster.origin_state)}</b> ·
-            Traffic: <b>${activeCluster.total_traffic.toLocaleString()}+</b>
+            Peak Hub: <b style="color:#fbbf24">${esc(activeCluster.origin_state)}</b>
           </span>
-          <button type="button" class="btn-action amber" id="btn-freeze-map-cluster">Freeze t₀ Contagion Signal</button>
+          <button type="button" class="btn-action amber" id="btn-freeze-map-cluster" style="font-size:10.5px;padding:3px 8px">Freeze t₀ Signal</button>
         </div>
       ` : ""}
       <div style="background:#070b12;border:1px solid #1e293b;border-radius:5px;padding:6px;overflow-x:auto">
-        <svg viewBox="0 0 470 264" style="width:100%;max-height:245px;display:block">${tileSvg}</svg>
-        <div style="display:flex;gap:12px;font-family:monospace;font-size:10px;color:#8b9bb0;margin-top:4px;padding-left:4px">
-          <span><span style="color:#f59e0b">■</span> Origin / Peak Hub</span>
-          <span><span style="color:#0ea5e9">■</span> High Spread</span>
-          <span><span style="color:#164e63">■</span> Active State</span>
-          <span>Click any state tile to inspect its live Top trends</span>
+        ${buildMapSvg(225)}
+        <div style="display:flex;justify-content:space-between;gap:10px;font-family:monospace;font-size:10px;color:#8b9bb0;margin-top:4px;padding:0 4px;flex-wrap:wrap">
+          <span><span style="color:#f59e0b">■</span> Peak/Origin Hub &nbsp; <span style="color:#0ea5e9">■</span> High Spread &nbsp; <span style="color:#164e63">■</span> Active</span>
+          <span>${md ? `${md.states_loaded} states loaded` : "Scanning..."}</span>
         </div>
       </div>
       ${state.mapSelectedState ? `
@@ -622,23 +677,53 @@ function renderDesk() {
 
     const fetchMap = async (force = false) => {
       state.mapQuery = document.getElementById("map-query")?.value.trim() || "";
+      state.mapHideNoise = document.getElementById("map-hide-noise")?.checked ?? true;
       const btn = document.getElementById("btn-refresh-map");
-      if (btn) { btn.disabled = true; btn.textContent = "Scanning 50 states..."; }
+      if (btn) { btn.disabled = true; btn.textContent = "Scanning..."; }
       try {
-        const qs = new URLSearchParams({ q: state.mapQuery, refresh: force ? "1" : "0" });
+        const qs = new URLSearchParams({
+          q: state.mapQuery,
+          refresh: force ? "1" : "0",
+          hide_noise: state.mapHideNoise ? "1" : "0",
+        });
         state.mapData = await api(`/api/contagion-map?${qs.toString()}`);
         state.mapLoaded = true;
         state.mapSelectedClusterIdx = 0;
-        setStatus(`US Contagion Map scanned ${state.mapData.states_loaded} states (${state.mapData.clusters.length} trend clusters)`);
+        setStatus(`US Contagion Map scanned ${state.mapData.states_loaded} states (${state.mapData.clusters.length} filtered clusters)`);
         renderDesk();
       } catch (err) {
         setStatus(err.message, true);
-        if (btn) { btn.disabled = false; btn.textContent = "Scan 50 States"; }
+        if (btn) { btn.disabled = false; btn.textContent = "Rescan 50 States"; }
       }
     };
     document.getElementById("btn-refresh-map").addEventListener("click", () => fetchMap(true));
+    document.getElementById("map-hide-noise").addEventListener("change", () => fetchMap(false));
     document.getElementById("map-query").addEventListener("keydown", (e) => {
       if (e.key === "Enter") fetchMap(false);
+    });
+    document.getElementById("btn-expand-map").addEventListener("click", () => {
+      openModal(
+        `US CULTURAL CONTAGION MAP // ${activeCluster ? activeCluster.topic : "ALL ACTIVE STATES"}`,
+        `
+        <div style="margin-bottom:8px;font-family:monospace;font-size:11px;color:#94a3b8">
+          ${activeCluster ? `<b style="color:#f59e0b">${esc(activeCluster.topic)}</b> · ${activeCluster.state_count} active states · Peak Hub: <b style="color:#fbbf24">${esc(activeCluster.origin_state)}</b> · Combined Traffic: <b>${activeCluster.total_traffic.toLocaleString()}+</b>` : "Showing live US state search intensity."}
+        </div>
+        <div style="background:#070b12;border:1px solid #1e293b;border-radius:6px;padding:12px">
+          ${buildMapSvg(460)}
+        </div>
+        <div id="modal-state-detail" style="margin-top:10px;font-size:12px;color:#94a3b8">Click any state tile above to inspect its live Top 6 breaking trends.</div>
+        `
+      );
+      document.querySelectorAll("#modal-body [data-map-state]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const code = el.dataset.mapState;
+          const items = (md?.by_state?.[code] || []).slice(0, 6);
+          const box = document.getElementById("modal-state-detail");
+          if (box) {
+            box.innerHTML = `<b style="color:#fb7185">US-${esc(code)} Live Trends:</b> ` + (items.length ? items.map((x) => `${esc(x.title)} <span style="color:#22d3ee">(${esc(x.traffic_label)})</span>`).join(" · ") : "No items.");
+          }
+        });
+      });
     });
     body.querySelectorAll("[data-map-cluster]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -668,7 +753,7 @@ function renderDesk() {
           await loadBootstrap();
         } catch (err) {
           frzBtn.disabled = false;
-          frzBtn.textContent = "Freeze t₀ Contagion Signal";
+          frzBtn.textContent = "Freeze t₀ Signal";
           setStatus(err.message, true);
         }
       });

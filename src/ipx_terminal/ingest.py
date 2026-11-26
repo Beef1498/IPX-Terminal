@@ -892,33 +892,47 @@ def fetch_prediction_markets(
     source: str = "all",
     query: str = "",
     ip_only: bool = True,
+    live_odds_only: bool = True,
+    sector: str = "ALL",
     limit: int = 24,
 ) -> Dict[str, Any]:
     """Fetch combined live Polymarket + Kalshi Content IP markets with zero API keys."""
     src = source.strip().lower()
+    sec_filter = sector.strip().upper()
     markets: List[Dict[str, Any]] = []
     errors: List[str] = []
-    half = max(1, limit // 2) if src == "all" else limit
+    fetch_cap = max(30, limit * 2)
 
     if src in ("all", "polymarket"):
         try:
-            markets.extend(fetch_polymarket_markets(query=query, ip_only=ip_only, limit=half))
+            markets.extend(fetch_polymarket_markets(query=query, ip_only=ip_only, limit=fetch_cap))
         except Exception as exc:
             errors.append(f"Polymarket: {exc}")
 
     if src in ("all", "kalshi"):
         try:
-            markets.extend(fetch_kalshi_markets(query=query, ip_only=ip_only, limit=half))
+            markets.extend(fetch_kalshi_markets(query=query, ip_only=ip_only, limit=fetch_cap))
         except Exception as exc:
             errors.append(f"Kalshi: {exc}")
 
-    markets.sort(key=lambda m: (float(m.get("volume_24h") or 0), float(m.get("total_volume") or 0)), reverse=True)
+    filtered: List[Dict[str, Any]] = []
+    for m in markets:
+        if sec_filter and sec_filter != "ALL" and m.get("sector") != sec_filter:
+            continue
+        yp = m.get("yes_pct")
+        if live_odds_only and yp is not None and (yp >= 99.0 or yp <= 1.0):
+            continue
+        filtered.append(m)
+
+    filtered.sort(key=lambda m: (float(m.get("volume_24h") or 0), float(m.get("total_volume") or 0)), reverse=True)
     return {
         "source": src,
         "query": query,
+        "sector": sec_filter,
         "ip_only": ip_only,
-        "count": len(markets),
-        "markets": markets[:limit],
+        "live_odds_only": live_odds_only,
+        "count": len(filtered[:limit]),
+        "markets": filtered[:limit],
         "errors": errors,
     }
 
@@ -1012,10 +1026,41 @@ def _fetch_state_trends_rss(state_code: str, timeout: int = 8) -> Tuple[str, Lis
     return state_code, items
 
 
+_UTILITY_NOISE_TERMS: Tuple[str, ...] = (
+    "weather",
+    "clima",
+    "sunrise",
+    "sunset",
+    "powerball",
+    "mega millions",
+    "lottery",
+    "wordle",
+    "connections",
+    "strands",
+    "horoscope",
+    "store hours",
+    "hours",
+    "open on thanksgiving",
+    "open on christmas",
+    "open today",
+    "google play",
+    "time now",
+    "earthquake",
+)
+
+
+def _is_utility_noise(topic: str) -> bool:
+    low = topic.strip().lower()
+    if low in ("weather", "clima", "sunrise", "sunset", "news", "google"):
+        return True
+    return any(term in low for term in _UTILITY_NOISE_TERMS)
+
+
 def fetch_us_contagion_map(
     query: str = "",
     states: Sequence[str] = US_STATES,
     force_refresh: bool = False,
+    hide_noise: bool = True,
     cache_ttl_sec: int = 600,
 ) -> Dict[str, Any]:
     """Scan US states via Google Trends RSS in parallel and build a US Cultural Contagion Map."""
@@ -1049,6 +1094,8 @@ def fetch_us_contagion_map(
         for item in items:
             t_low = item["title"].lower()
             if q_low and q_low not in t_low:
+                continue
+            if hide_noise and not q_low and _is_utility_noise(item["title"]):
                 continue
             st_match_traffic += item["traffic"]
             # Normalize cluster key by stripping punctuation & extra spaces

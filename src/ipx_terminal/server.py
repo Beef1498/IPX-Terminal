@@ -227,16 +227,26 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                 if path == "/api/markets":
                     q_text = qs.get("q", [""])[0]
                     src = qs.get("source", ["all"])[0]
+                    sec_f = qs.get("sector", ["ALL"])[0]
                     ip_only = qs.get("ip_only", ["1"])[0].lower() not in ("0", "false", "no")
+                    live_only = qs.get("live_only", ["1"])[0].lower() not in ("0", "false", "no")
                     lim = int(qs.get("limit", ["24"])[0])
-                    data = fetch_prediction_markets(source=src, query=q_text, ip_only=ip_only, limit=lim)
+                    data = fetch_prediction_markets(
+                        source=src,
+                        query=q_text,
+                        ip_only=ip_only,
+                        live_odds_only=live_only,
+                        sector=sec_f,
+                        limit=lim,
+                    )
                     self._send_json({"ok": True, **data})
                     return
 
                 if path == "/api/contagion-map":
                     q_text = qs.get("q", [""])[0]
                     force = qs.get("refresh", ["0"])[0].lower() in ("1", "true", "yes")
-                    data = fetch_us_contagion_map(query=q_text, force_refresh=force)
+                    hide_noise = qs.get("hide_noise", ["1"])[0].lower() not in ("0", "false", "no")
+                    data = fetch_us_contagion_map(query=q_text, force_refresh=force, hide_noise=hide_noise)
                     self._send_json({"ok": True, **data})
                     return
 
