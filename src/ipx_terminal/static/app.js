@@ -20,6 +20,11 @@ const state = {
   marketsSource: "all",
   marketsQuery: "",
   marketsIpOnly: true,
+  mapData: null,
+  mapLoaded: false,
+  mapQuery: "",
+  mapSelectedClusterIdx: 0,
+  mapSelectedState: null,
 };
 
 function esc(str) {
@@ -496,6 +501,169 @@ function renderDesk() {
     if (!state.marketsLoaded) {
       state.marketsLoaded = true;
       runFetch();
+    }
+    return;
+  }
+
+  if (state.activeTab === "MAP") {
+    const US_GRID = [
+      ["AK",0,0],["ME",10,0],
+      ["VT",9,1],["NH",10,1],
+      ["WA",0,2],["ID",1,2],["MT",2,2],["ND",3,2],["MN",4,2],["WI",5,2],["MI",6,2],["NY",8,2],["MA",9,2],["RI",10,2],
+      ["OR",0,3],["NV",1,3],["WY",2,3],["SD",3,3],["IA",4,3],["IL",5,3],["IN",6,3],["OH",7,3],["PA",8,3],["NJ",9,3],["CT",10,3],
+      ["CA",0,4],["UT",1,4],["CO",2,4],["NE",3,4],["MO",4,4],["KY",5,4],["WV",6,4],["VA",7,4],["MD",8,4],["DE",9,4],
+      ["AZ",1,5],["NM",2,5],["KS",3,5],["AR",4,5],["TN",5,5],["NC",6,5],["SC",7,5],["DC",8,5],
+      ["OK",3,6],["LA",4,6],["MS",5,6],["AL",6,6],["GA",7,6],
+      ["HI",0,7],["TX",3,7],["FL",8,7]
+    ];
+    const md = state.mapData;
+    const clusters = md?.clusters || [];
+    const activeCluster = clusters[state.mapSelectedClusterIdx] || null;
+    const activeTraffic = activeCluster ? activeCluster.state_traffic || {} : (md?.state_scores || {});
+    const maxVal = Math.max(100, ...Object.values(activeTraffic).map(Number));
+    const originSt = activeCluster?.origin_state || null;
+
+    const tileSvg = US_GRID.map(([code, col, row]) => {
+      const x = col * 42 + 4;
+      const y = row * 32 + 4;
+      const val = Number(activeTraffic[code] || 0);
+      const isOrigin = originSt && code === originSt;
+      const isSelected = state.mapSelectedState === code;
+      let fill = "#0c1320";
+      let stroke = "#1e293b";
+      let textCol = "#64748b";
+      if (val > 0) {
+        const ratio = val / maxVal;
+        if (isOrigin) {
+          fill = "#f59e0b";
+          stroke = "#fef08a";
+          textCol = "#090d16";
+        } else if (ratio >= 0.6) {
+          fill = "#0ea5e9";
+          stroke = "#7dd3fc";
+          textCol = "#04111d";
+        } else {
+          fill = "#164e63";
+          stroke = "#22d3ee";
+          textCol = "#e0f2fe";
+        }
+      }
+      if (isSelected) {
+        stroke = "#fb7185";
+      }
+      return `
+        <g data-map-state="${code}" style="cursor:pointer">
+          <rect x="${x}" y="${y}" width="38" height="28" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected || isOrigin ? 2 : 1}"></rect>
+          <text x="${x + 19}" y="${y + 17}" text-anchor="middle" fill="${textCol}" font-family="monospace" font-size="10.5" font-weight="700">${code}</text>
+        </g>
+      `;
+    }).join("");
+
+    const clusterPills = clusters.slice(0, 10).map((c, idx) => {
+      const isAct = idx === state.mapSelectedClusterIdx;
+      return `<button type="button" class="btn-action ${isAct ? "amber" : ""}" data-map-cluster="${idx}" style="font-size:10.5px;padding:3px 7px">${esc(c.topic.slice(0, 26))} (${c.state_count})</button>`;
+    }).join("");
+
+    const selectedStateItems = state.mapSelectedState && md?.by_state?.[state.mapSelectedState]
+      ? md.by_state[state.mapSelectedState].slice(0, 6).map((it) => `<li><b>${esc(it.title)}</b> <span style="color:#22d3ee">(${esc(it.traffic_label)})</span></li>`).join("")
+      : "";
+
+    body.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-family:monospace;font-size:11px;color:#94a3b8">US CULTURAL CONTAGION MAP · ${md ? `${md.states_loaded} STATES LIVE` : "LOADING..."}</span>
+        <div style="display:flex;gap:5px;align-items:center">
+          <input id="map-query" value="${esc(state.mapQuery)}" placeholder="Filter trend (e.g. NFL, Black Friday)..." style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:3px 7px;border-radius:3px;font-size:11px;width:185px" />
+          <button type="button" class="btn-action cyan" id="btn-refresh-map">Scan 50 States</button>
+        </div>
+      </div>
+      ${clusters.length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${clusterPills}</div>` : ""}
+      ${activeCluster ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;background:#090f19;border:1px solid #1e293b;border-radius:4px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-family:monospace;font-size:11px">
+            <b style="color:#f59e0b">${esc(activeCluster.topic)}</b> ·
+            <span style="color:#22d3ee">${activeCluster.state_count} states</span> ·
+            Peak/Origin: <b style="color:#fbbf24">${esc(activeCluster.origin_state)}</b> ·
+            Traffic: <b>${activeCluster.total_traffic.toLocaleString()}+</b>
+          </span>
+          <button type="button" class="btn-action amber" id="btn-freeze-map-cluster">Freeze t₀ Contagion Signal</button>
+        </div>
+      ` : ""}
+      <div style="background:#070b12;border:1px solid #1e293b;border-radius:5px;padding:6px;overflow-x:auto">
+        <svg viewBox="0 0 470 264" style="width:100%;max-height:245px;display:block">${tileSvg}</svg>
+        <div style="display:flex;gap:12px;font-family:monospace;font-size:10px;color:#8b9bb0;margin-top:4px;padding-left:4px">
+          <span><span style="color:#f59e0b">■</span> Origin / Peak Hub</span>
+          <span><span style="color:#0ea5e9">■</span> High Spread</span>
+          <span><span style="color:#164e63">■</span> Active State</span>
+          <span>Click any state tile to inspect its live Top trends</span>
+        </div>
+      </div>
+      ${state.mapSelectedState ? `
+        <div class="pred-card" style="margin-top:8px">
+          <div class="pred-head">
+            <span><b style="color:#fb7185">US-${esc(state.mapSelectedState)}</b> · LIVE BREAKING TRENDS</span>
+            <button type="button" class="btn-action" id="btn-clear-map-state" style="padding:2px 6px;font-size:10px">Close</button>
+          </div>
+          <ul style="margin:4px 0 0 16px;padding:0;font-size:11.5px;color:#cbd5e1">${selectedStateItems || "<li>No trends loaded for this state.</li>"}</ul>
+        </div>
+      ` : ""}
+    `;
+
+    const fetchMap = async (force = false) => {
+      state.mapQuery = document.getElementById("map-query")?.value.trim() || "";
+      const btn = document.getElementById("btn-refresh-map");
+      if (btn) { btn.disabled = true; btn.textContent = "Scanning 50 states..."; }
+      try {
+        const qs = new URLSearchParams({ q: state.mapQuery, refresh: force ? "1" : "0" });
+        state.mapData = await api(`/api/contagion-map?${qs.toString()}`);
+        state.mapLoaded = true;
+        state.mapSelectedClusterIdx = 0;
+        setStatus(`US Contagion Map scanned ${state.mapData.states_loaded} states (${state.mapData.clusters.length} trend clusters)`);
+        renderDesk();
+      } catch (err) {
+        setStatus(err.message, true);
+        if (btn) { btn.disabled = false; btn.textContent = "Scan 50 States"; }
+      }
+    };
+    document.getElementById("btn-refresh-map").addEventListener("click", () => fetchMap(true));
+    document.getElementById("map-query").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") fetchMap(false);
+    });
+    body.querySelectorAll("[data-map-cluster]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.mapSelectedClusterIdx = Number(btn.dataset.mapCluster);
+        renderDesk();
+      });
+    });
+    body.querySelectorAll("[data-map-state]").forEach((el) => {
+      el.addEventListener("click", () => {
+        state.mapSelectedState = el.dataset.mapState;
+        renderDesk();
+      });
+    });
+    const clrBtn = document.getElementById("btn-clear-map-state");
+    if (clrBtn) clrBtn.addEventListener("click", () => { state.mapSelectedState = null; renderDesk(); });
+    const frzBtn = document.getElementById("btn-freeze-map-cluster");
+    if (frzBtn && activeCluster) {
+      frzBtn.addEventListener("click", async () => {
+        frzBtn.disabled = true;
+        frzBtn.textContent = "Freezing...";
+        try {
+          const res = await api("/api/ingest/contagion-map", {
+            method: "POST",
+            body: JSON.stringify({ cluster: activeCluster }),
+          });
+          setStatus(`Froze US Contagion Map t₀ signal (${res.signal.ticker} · ${activeCluster.state_count} states)!`);
+          await loadBootstrap();
+        } catch (err) {
+          frzBtn.disabled = false;
+          frzBtn.textContent = "Freeze t₀ Contagion Signal";
+          setStatus(err.message, true);
+        }
+      });
+    }
+    if (!state.mapLoaded) {
+      state.mapLoaded = true;
+      fetchMap(false);
     }
     return;
   }
@@ -1148,14 +1316,14 @@ async function runCommandText(cmd) {
       await loadBootstrap(true);
     } else if (res.action === "select_ticker") {
       await selectTicker(res.ticker, false);
-      if (["DES", "LOG", "BRIEFS", "MKTS", "EXPORT"].includes(res.function)) {
+      if (["DES", "LOG", "BRIEFS", "MKTS", "MAP", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }
     } else if (res.action === "focus_function") {
       if (res.function === "HELP") {
         openHelpModal();
-      } else if (["DES", "LOG", "BRIEFS", "MKTS", "EXPORT"].includes(res.function)) {
+      } else if (["DES", "LOG", "BRIEFS", "MKTS", "MAP", "EXPORT"].includes(res.function)) {
         state.activeTab = res.function;
         renderDesk();
       }

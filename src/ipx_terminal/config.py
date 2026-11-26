@@ -94,6 +94,7 @@ FUNCTION_CODES: Dict[str, str] = {
     "LOG": "Prediction logger and 48-72h outcome resolution desk",
     "BRIEFS": "Creative Brief generator & Content Factory post outcome logger",
     "MKTS": "Live Polymarket & Kalshi Content IP prediction markets",
+    "MAP": "Live 50-state US Cultural Contagion Map (Google Trends geo spread)",
     "EXPORT": "Schema-validated IPX-Eval JSONL export",
     "CN": "Catalyst and news signals for active ticker",
     "MA": "Deals, licensing, and M&A sector filter",

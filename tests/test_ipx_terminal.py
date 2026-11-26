@@ -431,6 +431,25 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertEqual(second["total_new_pairs"], 0)
         self.assertEqual(second["results"][0]["skipped_seen"], 2)
 
+    def test_us_contagion_map_clusters_and_freeze_signal(self) -> None:
+        from ipx_terminal.ingest import fetch_us_contagion_map, ingest_contagion_map_signal
+
+        def fake_state_rss(code: str, timeout: int = 8):
+            if code == "GA":
+                return code, [{"title": "Katt Williams CapCut", "traffic_label": "5000+", "traffic": 5000, "pub_date": ""}]
+            return code, [{"title": "Katt Williams CapCut", "traffic_label": "1000+", "traffic": 1000, "pub_date": ""}]
+
+        with mock.patch("ipx_terminal.ingest._fetch_state_trends_rss", side_effect=fake_state_rss):
+            res = fetch_us_contagion_map(states=("GA", "CA", "NY", "TX"), force_refresh=True)
+        self.assertEqual(res["states_loaded"], 4)
+        self.assertEqual(res["clusters"][0]["state_count"], 4)
+        self.assertEqual(res["clusters"][0]["origin_state"], "GA")
+        self.assertEqual(res["clusters"][0]["spread_stage"], "emerging_contagion")
+
+        sig = ingest_contagion_map_signal(self.db, res["clusters"][0])
+        self.assertEqual(sig["metrics"]["us_states_active"], 4)
+        self.assertEqual(sig["metrics"]["origin_state"], "GA")
+
 
 if __name__ == "__main__":
     unittest.main()

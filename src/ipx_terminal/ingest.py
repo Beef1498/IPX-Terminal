@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
 from ipx_terminal.config import DEFAULT_EXPORT_DIR, PROJECT_ROOT
 from ipx_terminal.db import TerminalDB, normalize_ticker
@@ -965,6 +967,181 @@ def ingest_market_signal(
         sector=use_sector,
         entity_name=title[:80],
         owner_holder=f"{src} Prediction Market",
+    )
+
+
+US_STATES: Tuple[str, ...] = (
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL",
+    "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME",
+    "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH",
+    "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
+    "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+)
+
+_CONTAGION_MAP_CACHE: Dict[str, Any] = {"ts": 0.0, "states": {}}
+
+
+def _parse_approx_traffic(raw: str) -> int:
+    cleaned = re.sub(r"[^0-9]", "", str(raw or ""))
+    return int(cleaned) if cleaned else 100
+
+
+def _fetch_state_trends_rss(state_code: str, timeout: int = 8) -> Tuple[str, List[Dict[str, Any]]]:
+    """Fetch live Google Trends RSS items for a single US state (zero API key)."""
+    url = f"https://trends.google.com/trending/rss?geo=US-{state_code}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 IPX-Terminal/0.1"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        xml_bytes = resp.read()
+    root = ET.fromstring(xml_bytes)
+    ns = {"ht": "https://trends.google.com/trending/rss"}
+    items: List[Dict[str, Any]] = []
+    for item in root.findall(".//item")[:10]:
+        title = (item.findtext("title") or "").strip()
+        if not title:
+            continue
+        traffic_raw = (item.findtext("ht:approx_traffic", "", ns) or "100+").strip()
+        pub_date = (item.findtext("pubDate") or "").strip()
+        items.append(
+            {
+                "title": title,
+                "traffic_label": traffic_raw,
+                "traffic": _parse_approx_traffic(traffic_raw),
+                "pub_date": pub_date,
+            }
+        )
+    return state_code, items
+
+
+def fetch_us_contagion_map(
+    query: str = "",
+    states: Sequence[str] = US_STATES,
+    force_refresh: bool = False,
+    cache_ttl_sec: int = 600,
+) -> Dict[str, Any]:
+    """Scan US states via Google Trends RSS in parallel and build a US Cultural Contagion Map."""
+    now = time.time()
+    cached_states: Dict[str, List[Dict[str, Any]]] = _CONTAGION_MAP_CACHE.get("states") or {}
+    errors: List[str] = []
+
+    if force_refresh or not cached_states or (now - float(_CONTAGION_MAP_CACHE.get("ts") or 0.0)) > cache_ttl_sec:
+        fresh: Dict[str, List[Dict[str, Any]]] = {}
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            futs = {pool.submit(_fetch_state_trends_rss, st): st for st in states}
+            for fut in as_completed(futs):
+                st = futs[fut]
+                try:
+                    code, items = fut.result()
+                    fresh[code] = items
+                except Exception as exc:
+                    errors.append(f"{st}: {exc}")
+        if fresh:
+            _CONTAGION_MAP_CACHE["ts"] = now
+            _CONTAGION_MAP_CACHE["states"] = fresh
+            cached_states = fresh
+
+    # Cluster trending topics across states
+    q_low = query.strip().lower()
+    clusters: Dict[str, Dict[str, Any]] = {}
+    state_scores: Dict[str, int] = {}
+
+    for st, items in cached_states.items():
+        st_match_traffic = 0
+        for item in items:
+            t_low = item["title"].lower()
+            if q_low and q_low not in t_low:
+                continue
+            st_match_traffic += item["traffic"]
+            # Normalize cluster key by stripping punctuation & extra spaces
+            key = re.sub(r"[^a-z0-9 ]+", "", t_low).strip()
+            if not key:
+                continue
+            entry = clusters.setdefault(
+                key,
+                {
+                    "topic": item["title"],
+                    "states": {},
+                    "total_traffic": 0,
+                    "origin_state": st,
+                    "peak_traffic": -1,
+                },
+            )
+            if st not in entry["states"] or item["traffic"] > entry["states"][st]:
+                entry["states"][st] = item["traffic"]
+            entry["total_traffic"] += item["traffic"]
+            if item["traffic"] > entry["peak_traffic"]:
+                entry["peak_traffic"] = item["traffic"]
+                entry["origin_state"] = st
+        if st_match_traffic > 0:
+            state_scores[st] = st_match_traffic
+
+    ranked_clusters = []
+    for c in clusters.values():
+        st_list = sorted(c["states"].keys())
+        ranked_clusters.append(
+            {
+                "topic": c["topic"],
+                "state_count": len(st_list),
+                "states": st_list,
+                "state_traffic": c["states"],
+                "origin_state": c["origin_state"],
+                "total_traffic": c["total_traffic"],
+                "spread_stage": (
+                    "mainstream_breakout"
+                    if len(st_list) >= 12
+                    else ("emerging_contagion" if len(st_list) >= 4 else "echo_chamber")
+                ),
+            }
+        )
+    ranked_clusters.sort(key=lambda x: (x["state_count"], x["total_traffic"]), reverse=True)
+
+    return {
+        "captured_at": utc_now_iso(),
+        "query": query,
+        "states_loaded": len(cached_states),
+        "clusters": ranked_clusters[:20],
+        "state_scores": state_scores,
+        "by_state": cached_states,
+        "errors": errors[:10],
+    }
+
+
+def ingest_contagion_map_signal(
+    db: TerminalDB,
+    cluster: Dict[str, Any],
+    ticker: Optional[str] = None,
+    sector: str = "POP",
+) -> Dict[str, Any]:
+    """Freeze a live US Contagion Map cluster as a t_0 signal in IPX Terminal."""
+    topic = str(cluster.get("topic") or "").strip()
+    if not topic:
+        raise ValueError("Cluster topic is required")
+    states = list(cluster.get("states") or [])
+    origin = str(cluster.get("origin_state") or (states[0] if states else "US"))
+    total_traffic = int(cluster.get("total_traffic") or 0)
+    use_ticker = normalize_ticker(ticker or re.sub(r"[^A-Za-z0-9]+", "", topic)[:10] or "US.TREND")
+    summary = (
+        f"Live US Cultural Contagion Map snapshot at t_0: '{topic}' is trending across "
+        f"{len(states)} US states (origin/peak hub: {origin}, combined search traffic: {total_traffic:,}+). "
+        f"Active states: {', '.join(states[:12])}."
+    )
+    return db.insert_signal(
+        ticker=use_ticker,
+        title=f"[US MAP · {len(states)} States] {topic}"[:160],
+        summary=summary,
+        platforms=["Google Trends", "US Geo Map"],
+        metrics={
+            "google_trends_index": min(100, len(states) * 4 + 15),
+            "us_states_active": len(states),
+            "origin_state": origin,
+            "active_states": states,
+            "approx_search_traffic": total_traffic,
+        },
+        samples=[f"Origin hub: {origin} | Active in {len(states)} states: {', '.join(states[:10])}"],
+        entities_mentioned=[use_ticker, topic, origin],
+        source_type="us_contagion_map",
+        sector=sector,
+        entity_name=topic[:80],
+        owner_holder="US Cultural Contagion Map",
     )
 
 

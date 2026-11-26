@@ -32,6 +32,8 @@ from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_j
 from ipx_terminal.ingest import (
     auto_pair_creator_ab,
     fetch_prediction_markets,
+    fetch_us_contagion_map,
+    ingest_contagion_map_signal,
     ingest_gdelt,
     ingest_market_signal,
     ingest_url,
@@ -173,6 +175,13 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, **data})
                     return
 
+                if path == "/api/contagion-map":
+                    q_text = qs.get("q", [""])[0]
+                    force = qs.get("refresh", ["0"])[0].lower() in ("1", "true", "yes")
+                    data = fetch_us_contagion_map(query=q_text, force_refresh=force)
+                    self._send_json({"ok": True, **data})
+                    return
+
                 if path.startswith("/api/ticker/"):
                     ticker = urllib.parse.unquote(path[len("/api/ticker/"):])
                     norm = normalize_ticker(ticker)
@@ -244,6 +253,16 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         market=body.get("market") or body,
                         ticker=body.get("ticker") or None,
                         sector=body.get("sector") or None,
+                    )
+                    self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/ingest/contagion-map":
+                    sig = ingest_contagion_map_signal(
+                        db=db,
+                        cluster=body.get("cluster") or body,
+                        ticker=body.get("ticker") or None,
+                        sector=str(body.get("sector") or "POP"),
                     )
                     self._send_json({"ok": True, "signal": sig}, status=HTTPStatus.CREATED)
                     return
