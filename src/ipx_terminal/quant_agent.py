@@ -19,12 +19,30 @@ from ipx_terminal.config import (
 )
 from ipx_terminal.db import TerminalDB, utc_now_iso
 from ipx_terminal.exporter import export_resolved_to_jsonl
-from ipx_terminal.ingest import fetch_prediction_markets, fetch_us_contagion_map, recheck_overdue_predictions
+from ipx_terminal.ingest import (
+    fetch_prediction_markets,
+    fetch_scrapecreators_creator_posts,
+    fetch_us_contagion_map,
+    recheck_overdue_predictions,
+)
 from ipx_terminal.quant import build_quant_workspace
 
 DEFAULT_MORNING_MODEL = "gemini-2.5-pro"
 DEFAULT_INTRADAY_MODEL = "gemini-3.5-flash-lite"
-DEFAULT_MEMOS_DIR = Path(__file__).resolve().parents[2] / "data" / "quant_memos"
+DEFAULT_WATCHLIST_PATH = Path(__file__).resolve().parents[2] / "data" / "creator_watchlist.json"
+
+
+def _default_memos_dir() -> Path:
+    explicit = os.environ.get("IPX_QUANT_MEMOS_DIR", "").strip()
+    if explicit:
+        return Path(explicit)
+    db_env = os.environ.get("IPX_DB_PATH", "").strip()
+    if db_env:
+        return Path(db_env).resolve().parent / "quant_memos"
+    return Path(__file__).resolve().parents[2] / "data" / "quant_memos"
+
+
+DEFAULT_MEMOS_DIR = _default_memos_dir()
 
 
 def _resolve_quant_api_key(api_key: Optional[str] = None) -> str:
@@ -294,6 +312,163 @@ def auto_draft_morning_briefs(
     return drafted
 
 
+def _make_creator_ticker(handle: str, sector: str) -> str:
+    clean = "".join(ch for ch in handle.upper() if ch.isalnum())[:5] or "IPX"
+    sec_tag = {
+        "CREATORS": "CR",
+        "MUSIC": "MU",
+        "FILM_TV": "FT",
+        "GAMING": "GM",
+        "SPORTS": "SP",
+        "POP": "PP",
+        "DEALS": "DL",
+    }.get(sector.upper(), "IP")
+    return f"{clean}.{sec_tag}"
+
+
+def ingest_daily_niche_creators(
+    db: TerminalDB,
+    watchlist_path: Optional[Path] = None,
+    max_creators: int = 5,
+    api_key: Optional[str] = None,
+    fetcher: Optional[Callable[[str, str], List[Dict[str, Any]]]] = None,
+) -> Dict[str, Any]:
+    """Rotate 1 creator per distinct niche from creator_watchlist.json and ingest their top fresh post into Terminal."""
+    wl_path = watchlist_path or DEFAULT_WATCHLIST_PATH
+    if not wl_path.exists():
+        return {"ingested_count": 0, "ingested": [], "errors": ["creator_watchlist.json not found"]}
+
+    entries: List[Dict[str, Any]] = json.loads(wl_path.read_text(encoding="utf-8"))
+    # Sort least-recently-ingested first, then pick at most 1 per distinct sector for daily niche diversity
+    ranked = sorted(
+        enumerate(entries),
+        key=lambda pair: str(pair[1].get("last_terminal_ingest_at") or ""),
+    )
+    selected: List[tuple] = []
+    seen_sectors = set()
+    for idx, entry in ranked:
+        sec = str(entry.get("sector") or "POP").upper()
+        if sec in seen_sectors and len(seen_sectors) < 7:
+            continue
+        seen_sectors.add(sec)
+        selected.append((idx, entry))
+        if len(selected) >= max_creators:
+            break
+
+    existing_urls = {
+        str(s.get("url") or "").strip().lower()
+        for s in db.list_signals(limit=500)
+        if s.get("url")
+    }
+
+    ingested: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    now_iso = utc_now_iso()
+
+    for idx, entry in selected:
+        platform = str(entry.get("platform") or "YouTube Shorts")
+        handle = str(entry.get("handle") or "").strip().lstrip("@")
+        sector = str(entry.get("sector") or "CREATORS").upper()
+        if sector not in VALID_SECTORS:
+            sector = "CREATORS"
+        if not handle:
+            continue
+        try:
+            posts = (
+                fetcher(platform, handle)
+                if fetcher is not None
+                else fetch_scrapecreators_creator_posts(platform=platform, handle=handle, api_key=api_key)
+            )
+            entries[idx]["last_terminal_ingest_at"] = now_iso
+            if not posts:
+                continue
+
+            # Compute creator median views so we spot genuine breakout multiples vs. baseline
+            view_vals = sorted(float(p.get("views") or 0) for p in posts if float(p.get("views") or 0) > 0)
+            median_views = view_vals[len(view_vals) // 2] if view_vals else 0.0
+
+            best_post = None
+            best_score = -1.0
+            for p in posts:
+                url = str(p.get("url") or "").strip()
+                if url and url.lower() in existing_urls:
+                    continue
+                views = float(p.get("views") or 0)
+                likes = float(p.get("likes") or 0)
+                shares = float(p.get("shares") or 0)
+                if views <= 0 and likes <= 0:
+                    continue
+                rel_mult = (views / median_views) if (median_views > 0 and views > 0) else 1.0
+                stl = (shares / likes) if (shares > 0 and likes > 0) else 0.0
+                rank_score = (stl * 100.0 * 2.0) + (rel_mult * 10.0) + (views / 250_000.0)
+                if rank_score > best_score:
+                    best_score = rank_score
+                    best_post = (p, rel_mult, stl)
+
+            if not best_post:
+                continue
+
+            post, rel_mult, stl = best_post
+            ticker = _make_creator_ticker(handle, sector)
+            views = int(post.get("views") or 0)
+            likes = int(post.get("likes") or 0)
+            shares = int(post.get("shares") or 0)
+            comments = int(post.get("comments") or 0)
+            raw_title = str(post.get("title") or post.get("caption") or f"@{handle} {platform} post").strip()
+            short_title = raw_title[:85]
+            url = str(post.get("url") or "").strip()
+
+            sig = db.insert_signal(
+                ticker=ticker,
+                title=f"{platform} @{handle}: {short_title}",
+                summary=(
+                    f"Daily niche rotation ({sector}) via ScrapeCreators on {platform} (@{handle}): "
+                    f"{views:,} views ({rel_mult:.2f}x creator median), {likes:,} likes, {shares:,} shares "
+                    f"({stl * 100:.1f}% share-to-like)."
+                ),
+                platforms=[platform],
+                metrics={
+                    "views": views,
+                    "likes": likes,
+                    "shares": shares,
+                    "comments": comments,
+                    "breakout_ratio_views_to_followers": round(rel_mult, 2),
+                    "share_to_like_ratio": round(stl, 4),
+                    "creator_handle": f"@{handle}",
+                    "niche_rotation": True,
+                },
+                samples=[raw_title[:160]] if raw_title else [],
+                entities_mentioned=[f"@{handle}", platform, sector],
+                source_type="scrapecreators_rotation",
+                url=url,
+                sector=sector,
+                entity_name=f"@{handle} ({sector})",
+            )
+            if url:
+                existing_urls.add(url.lower())
+            ingested.append(
+                {
+                    "signal_id": sig["id"],
+                    "ticker": sig["ticker"],
+                    "sector": sector,
+                    "platform": platform,
+                    "handle": f"@{handle}",
+                    "views": views,
+                    "breakout_ratio": round(rel_mult, 2),
+                    "share_to_like_pct": round(stl * 100.0, 1),
+                }
+            )
+        except Exception as exc:
+            errors.append(f"@{handle} ({platform}): {exc}")
+
+    try:
+        wl_path.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+    return {"ingested_count": len(ingested), "ingested": ingested, "errors": errors}
+
+
 def run_gemini_quant(
     db: TerminalDB,
     mode: str = "morning",
@@ -332,7 +507,18 @@ def run_gemini_quant(
     auto_resolve_summary: Dict[str, Any] = {"resolved_count": 0, "resolved": [], "exported_count": 0}
 
     # 1. Clear/recheck overdue 48-72h calls first (deterministic real-world fetch + clear-cut auto-resolve)
+    niche_ingest_summary: Dict[str, Any] = {"ingested_count": 0, "ingested": [], "errors": []}
     if fetch_live and not dry_run:
+        if norm_mode == "morning":
+            try:
+                niche_ingest_summary = ingest_daily_niche_creators(db=db, max_creators=5)
+                for item in niche_ingest_summary.get("ingested") or []:
+                    actions_taken.append(
+                        f"Ingested fresh {item['sector']} post ({item['ticker']} · {item['platform']} {item['handle']}): "
+                        f"{item['views']:,} views ({item['breakout_ratio']}x median, {item['share_to_like_pct']}% share/like)."
+                    )
+            except Exception as exc:
+                actions_taken.append(f"Daily niche creator rotation skipped: {exc}")
         try:
             recheck_summary = recheck_overdue_predictions(db=db)
             if recheck_summary.get("checked_count"):
@@ -412,7 +598,8 @@ def run_gemini_quant(
         "- 'executive_summary': string (2-4 concise sentences on what matters right now)\n"
         "- 'top_signals': list of up to 4 objects {ticker, signal_flag, thesis}\n"
         "- 'markets_to_freeze': list of up to 2 objects from live_prediction_markets to freeze as t_0 signals "
-        "{market_title, ticker, sector, yes_pct, source, url, rationale}\n"
+        "{market_title, ticker (MUST be a fresh topic-specific ticker like AVNG.IP or NFL.DEN — NEVER reuse an unrelated existing ticker), "
+        "sector, yes_pct, source, url, rationale}\n"
         f"- 'calls_to_log': list of up to {max_calls} high-conviction t_0 calls against existing screener signal_id values "
         "{signal_id (int), category (one of valid_categories_and_labels keys), predicted_label (exact canonical label for that category), "
         "confidence (float 0.50-0.92, well-calibrated for Brier score), thesis (1-2 sentences)}\n"
@@ -456,21 +643,36 @@ def run_gemini_quant(
         existing_pending_sig_ids = {
             p["signal_id"] for p in db.list_predictions(status="pending", limit=200)
         }
+        recent_sigs = db.list_signals(limit=250)
+        existing_market_urls = {
+            str(s.get("url") or "").strip().lower()
+            for s in recent_sigs
+            if s.get("source_type") == "prediction_market" and s.get("url")
+        }
+        existing_market_titles = {
+            str(s.get("title") or "").strip().lower()
+            for s in recent_sigs
+            if s.get("source_type") == "prediction_market" and s.get("title")
+        }
 
         for m in (decision.get("markets_to_freeze") or [])[:2]:
             title = str(m.get("market_title") or "").strip()
             ticker = str(m.get("ticker") or "").strip().upper()
             if not title or not ticker:
                 continue
+            mkt_url = str(m.get("url") or "").strip()
+            src = str(m.get("source") or "Polymarket").strip()
+            full_title = f"[{src}] {title}"
+            if (mkt_url and mkt_url.lower() in existing_market_urls) or full_title.lower() in existing_market_titles:
+                continue
             sector = str(m.get("sector") or "POP").strip().upper()
             if sector not in VALID_SECTORS:
                 sector = "POP"
             yes_pct = m.get("yes_pct")
-            src = str(m.get("source") or "Polymarket").strip()
             try:
                 sig = db.insert_signal(
                     ticker=ticker,
-                    title=f"[{src}] {title}",
+                    title=full_title,
                     summary=str(m.get("rationale") or f"Frozen by Gemini Quant ({used_model}) at {yes_pct}% YES."),
                     platforms=[src],
                     metrics={
@@ -479,10 +681,13 @@ def run_gemini_quant(
                         "frozen_by": f"gemini-quant:{used_model}",
                     },
                     source_type="prediction_market",
-                    url=str(m.get("url") or ""),
+                    url=mkt_url,
                     sector=sector,
                     entity_name=title[:60],
                 )
+                if mkt_url:
+                    existing_market_urls.add(mkt_url.lower())
+                existing_market_titles.add(full_title.lower())
                 frozen_signals.append({"signal_id": sig["id"], "ticker": sig["ticker"], "title": sig["title"]})
                 actions_taken.append(f"Froze market t_0 signal #{sig['id']} ({sig['ticker']}) at {yes_pct}% YES.")
             except Exception:

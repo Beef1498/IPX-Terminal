@@ -1,36 +1,211 @@
 [
-  {"platform": "YouTube Shorts", "handle": "colinandsamir", "sector": "CREATORS", "last_pulled_at": "2026-11-25T16:04:00Z"},
-  {"platform": "YouTube Shorts", "handle": "mkbhd", "sector": "CREATORS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "Mrwhosetheboss", "sector": "CREATORS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "veritasium", "sector": "CREATORS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "mkbhd", "sector": "CREATORS", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "Instagram Reels", "handle": "colinandsamir", "sector": "CREATORS", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "YouTube Shorts", "handle": "tracklib", "sector": "MUSIC", "last_pulled_at": "2026-11-25T16:04:00Z"},
-  {"platform": "YouTube Shorts", "handle": "RickBeato", "sector": "MUSIC", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "theneedledrop", "sector": "MUSIC", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "charlieputh", "sector": "MUSIC", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "Instagram Reels", "handle": "tracklib", "sector": "MUSIC", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "YouTube Shorts", "handle": "newrockstars", "sector": "FILM_TV", "last_pulled_at": "2026-11-25T16:04:00Z"},
-  {"platform": "YouTube Shorts", "handle": "ScreenRant", "sector": "FILM_TV", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "CorridorCrew", "sector": "FILM_TV", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "DeadMeat", "sector": "FILM_TV", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "netflix", "sector": "FILM_TV", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "YouTube Shorts", "handle": "IGN", "sector": "GAMING", "last_pulled_at": "2026-11-25T16:05:00Z"},
-  {"platform": "YouTube Shorts", "handle": "penguinz0", "sector": "GAMING", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "SkillUp", "sector": "GAMING", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "ign", "sector": "GAMING", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "YouTube Shorts", "handle": "jomboymedia", "sector": "SPORTS", "last_pulled_at": "2026-11-25T16:04:00Z"},
-  {"platform": "YouTube Shorts", "handle": "HouseofHighlights", "sector": "SPORTS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "YouTube Shorts", "handle": "ThePatMcAfeeShow", "sector": "SPORTS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "X", "handle": "BleacherReport", "sector": "SPORTS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "espn", "sector": "SPORTS", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "Instagram Reels", "handle": "houseofhighlights", "sector": "SPORTS", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "X", "handle": "Complex", "sector": "POP", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "X", "handle": "Variety", "sector": "POP", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "TikTok", "handle": "complex", "sector": "POP", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "Instagram Reels", "handle": "complex", "sector": "POP", "last_pulled_at": "2026-11-26T00:57:00Z"},
-  {"platform": "X", "handle": "joepompliano", "sector": "DEALS", "last_pulled_at": "2026-11-25T16:04:00Z"},
-  {"platform": "X", "handle": "FOS", "sector": "DEALS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "X", "handle": "ballmatthew", "sector": "DEALS", "last_pulled_at": "2026-11-26T00:43:00Z"},
-  {"platform": "Instagram Reels", "handle": "frontofficesports", "sector": "DEALS", "last_pulled_at": "2026-11-26T00:57:00Z"}
+  {
+    "platform": "YouTube Shorts",
+    "handle": "colinandsamir",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-25T16:04:00Z",
+    "last_terminal_ingest_at": "2026-11-27T17:50:03Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "mkbhd",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "Mrwhosetheboss",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "veritasium",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "mkbhd",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "colinandsamir",
+    "sector": "CREATORS",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "tracklib",
+    "sector": "MUSIC",
+    "last_pulled_at": "2026-11-25T16:04:00Z",
+    "last_terminal_ingest_at": "2026-11-27T17:50:03Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "RickBeato",
+    "sector": "MUSIC",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "theneedledrop",
+    "sector": "MUSIC",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "charlieputh",
+    "sector": "MUSIC",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "tracklib",
+    "sector": "MUSIC",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "newrockstars",
+    "sector": "FILM_TV",
+    "last_pulled_at": "2026-11-25T16:04:00Z",
+    "last_terminal_ingest_at": "2026-11-27T17:50:03Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "ScreenRant",
+    "sector": "FILM_TV",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "CorridorCrew",
+    "sector": "FILM_TV",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "DeadMeat",
+    "sector": "FILM_TV",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "netflix",
+    "sector": "FILM_TV",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "IGN",
+    "sector": "GAMING",
+    "last_pulled_at": "2026-11-25T16:05:00Z",
+    "last_terminal_ingest_at": "2026-11-27T17:50:03Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "penguinz0",
+    "sector": "GAMING",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "SkillUp",
+    "sector": "GAMING",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "ign",
+    "sector": "GAMING",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "jomboymedia",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-25T16:04:00Z",
+    "last_terminal_ingest_at": "2026-11-27T17:50:03Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "HouseofHighlights",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "ThePatMcAfeeShow",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "BleacherReport",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "espn",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "houseofhighlights",
+    "sector": "SPORTS",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "Complex",
+    "sector": "POP",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "Variety",
+    "sector": "POP",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "complex",
+    "sector": "POP",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "complex",
+    "sector": "POP",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "joepompliano",
+    "sector": "DEALS",
+    "last_pulled_at": "2026-11-25T16:04:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "FOS",
+    "sector": "DEALS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "X",
+    "handle": "ballmatthew",
+    "sector": "DEALS",
+    "last_pulled_at": "2026-11-26T00:43:00Z"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "frontofficesports",
+    "sector": "DEALS",
+    "last_pulled_at": "2026-11-26T00:57:00Z"
+  }
 ]

@@ -643,6 +643,34 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertTrue(res["resolved"][0]["prediction_correct"])
         self.assertGreaterEqual(res["exported_count"], 1)
 
+        # Daily niche creator rotation ingestion test (deduplicated across runs)
+        from ipx_terminal.quant_agent import ingest_daily_niche_creators
+
+        wl_path = Path(self._tmp.name) / "watchlist.json"
+        wl_path.write_text(
+            json.dumps(
+                [
+                    {"platform": "YouTube Shorts", "handle": "tracklib", "sector": "MUSIC"},
+                    {"platform": "TikTok", "handle": "ign", "sector": "GAMING"},
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        def _fake_fetch(plat: str, handle: str):
+            return [
+                {"url": f"https://example.com/{handle}/1", "title": "Baseline clip", "views": 50_000, "likes": 2_000, "shares": 100},
+                {"url": f"https://example.com/{handle}/2", "title": "Breakout clip", "views": 250_000, "likes": 10_000, "shares": 3_000},
+            ]
+
+        ing1 = ingest_daily_niche_creators(db=self.db, watchlist_path=wl_path, max_creators=2, fetcher=_fake_fetch)
+        self.assertEqual(ing1["ingested_count"], 2)
+        ing2 = ingest_daily_niche_creators(db=self.db, watchlist_path=wl_path, max_creators=2, fetcher=_fake_fetch)
+        # Second pass skips already-seen URLs (takes baseline clip next, never duplicates /2)
+        self.assertEqual(ing2["ingested_count"], 2)
+        ing3 = ingest_daily_niche_creators(db=self.db, watchlist_path=wl_path, max_creators=2, fetcher=_fake_fetch)
+        self.assertEqual(ing3["ingested_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
