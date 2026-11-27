@@ -254,6 +254,7 @@ def auto_draft_morning_briefs(
     model: str,
     base_url: str = DEFAULT_AI_BASE_URL,
     max_briefs: int = 2,
+    project: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Auto-draft ready-to-shoot short-form Video Briefs for top STRONG_SIGNAL / high-alpha tickers."""
     existing_sig_ids = {b["signal_id"] for b in db.list_briefs(limit=250)}
@@ -287,6 +288,7 @@ def auto_draft_morning_briefs(
             api_key=api_key,
             base_url=base_url,
             model=model,
+            project=project,
         )
         saved = db.create_brief(
             signal_id=sig["id"],
@@ -307,6 +309,8 @@ def auto_draft_morning_briefs(
                 "target_platform": saved["target_platform"],
                 "angle": saved["angle"],
                 "hook_2s": saved["hook_2s"],
+                "project_id": gen.get("project_id") or (project.get("id") if project else None),
+                "matched_track": gen.get("matched_track"),
             }
         )
     return drafted
@@ -332,28 +336,85 @@ def ingest_daily_niche_creators(
     max_creators: int = 5,
     api_key: Optional[str] = None,
     fetcher: Optional[Callable[[str, str], List[Dict[str, Any]]]] = None,
+    priority_project: Optional[str] = None,
+    priority_niches: Optional[List[str]] = None,
+    priority_slots: int = 2,
 ) -> Dict[str, Any]:
-    """Rotate 1 creator per distinct niche from creator_watchlist.json and ingest their top fresh post into Terminal."""
+    """Rotate creators across niches from creator_watchlist.json, reserving daily slots for the active client project."""
     wl_path = watchlist_path or DEFAULT_WATCHLIST_PATH
     if not wl_path.exists():
         return {"ingested_count": 0, "ingested": [], "errors": ["creator_watchlist.json not found"]}
 
     entries: List[Dict[str, Any]] = json.loads(wl_path.read_text(encoding="utf-8"))
-    # Sort least-recently-ingested first, then pick at most 1 per distinct sector for daily niche diversity
-    ranked = sorted(
-        enumerate(entries),
-        key=lambda pair: str(pair[1].get("last_terminal_ingest_at") or ""),
-    )
+    prio_proj = str(priority_project or "").strip().lower()
+    prio_niche_set = {str(n).strip().lower() for n in (priority_niches or []) if str(n).strip()}
+
+    def _is_priority(e: Dict[str, Any]) -> bool:
+        if prio_proj and str(e.get("project") or "").strip().lower() == prio_proj:
+            return True
+        if prio_niche_set and str(e.get("niche") or "").strip().lower() in prio_niche_set:
+            return True
+        return False
+
+    # Sort least-recently-ingested first, prioritizing TikTok/Instagram Reels + POP/MUSIC for song-seeding
+    def _sort_key(pair: tuple) -> tuple:
+        _, e = pair
+        ts = str(e.get("last_terminal_ingest_at") or "")
+        plat = str(e.get("platform") or "")
+        sec = str(e.get("sector") or "POP").upper()
+        plat_prio = 0 if plat in ("TikTok", "Instagram Reels") else 1
+        sec_prio = 0 if sec in ("POP", "MUSIC") else 1
+        return (ts, plat_prio, sec_prio)
+
+    ranked = sorted(enumerate(entries), key=_sort_key)
     selected: List[tuple] = []
+    chosen_idxs = set()
     seen_sectors = set()
+    seen_niches = set()
+    seen_platforms: Dict[str, int] = {}
+
+    # 1. Reserve up to priority_slots for the active client project / niches (spread across distinct niches)
+    if (prio_proj or prio_niche_set) and priority_slots > 0:
+        cap = min(priority_slots, max_creators)
+        for idx, entry in ranked:
+            if not _is_priority(entry):
+                continue
+            niche_key = str(entry.get("niche") or entry.get("handle") or "").lower()
+            if niche_key in seen_niches and len(seen_niches) < cap:
+                continue
+            plat = str(entry.get("platform") or "TikTok")
+            selected.append((idx, entry))
+            chosen_idxs.add(idx)
+            seen_niches.add(niche_key)
+            seen_platforms[plat] = seen_platforms.get(plat, 0) + 1
+            if len(selected) >= cap:
+                break
+
+    # 2. Fill remaining slots across distinct sectors & platforms
     for idx, entry in ranked:
+        if idx in chosen_idxs:
+            continue
         sec = str(entry.get("sector") or "POP").upper()
-        if sec in seen_sectors and len(seen_sectors) < 7:
+        plat = str(entry.get("platform") or "TikTok")
+        # Spread across niches & cap any single platform to at most 2 per daily pull (beyond priority slots)
+        if sec in seen_sectors and len(seen_sectors) < min(max_creators, 5):
+            continue
+        if seen_platforms.get(plat, 0) >= 2 and len(ranked) > max_creators:
             continue
         seen_sectors.add(sec)
+        seen_platforms[plat] = seen_platforms.get(plat, 0) + 1
         selected.append((idx, entry))
+        chosen_idxs.add(idx)
         if len(selected) >= max_creators:
             break
+    # Backfill if strict diversity filter left fewer than max_creators
+    if len(selected) < max_creators:
+        for idx, entry in ranked:
+            if idx not in chosen_idxs:
+                selected.append((idx, entry))
+                chosen_idxs.add(idx)
+                if len(selected) >= max_creators:
+                    break
 
     existing_urls = {
         str(s.get("url") or "").strip().lower()
@@ -436,6 +497,8 @@ def ingest_daily_niche_creators(
                     "share_to_like_ratio": round(stl, 4),
                     "creator_handle": f"@{handle}",
                     "niche_rotation": True,
+                    "niche": str(entry.get("niche") or ""),
+                    "project": str(entry.get("project") or ""),
                 },
                 samples=[raw_title[:160]] if raw_title else [],
                 entities_mentioned=[f"@{handle}", platform, sector],
@@ -480,6 +543,7 @@ def run_gemini_quant(
     max_calls: int = 2,
     memos_dir: Optional[Path] = None,
     llm_caller: Optional[Callable[[str, str, str], Dict[str, Any]]] = None,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the autonomous Gemini Quant routine (Morning Pro or Intraday Flash-Lite).
 
@@ -487,6 +551,9 @@ def run_gemini_quant(
     predictions, but NEVER fabricates 48-72h outcomes. Outcomes are only resolved
     from real-world metrics or human adjudication.
     """
+    from ipx_terminal.projects import get_default_active_project, get_project
+
+    active_project = get_project(project_id) if project_id else get_default_active_project()
     norm_mode = "intraday" if str(mode).strip().lower() == "intraday" else "morning"
     resolved_model = (
         (model or "").strip()
@@ -511,7 +578,13 @@ def run_gemini_quant(
     if fetch_live and not dry_run:
         if norm_mode == "morning":
             try:
-                niche_ingest_summary = ingest_daily_niche_creators(db=db, max_creators=5)
+                niche_ingest_summary = ingest_daily_niche_creators(
+                    db=db,
+                    max_creators=5,
+                    priority_project=active_project.get("id") if active_project else None,
+                    priority_niches=active_project.get("priority_niches") if active_project else None,
+                    priority_slots=2 if active_project else 0,
+                )
                 for item in niche_ingest_summary.get("ingested") or []:
                     actions_taken.append(
                         f"Ingested fresh {item['sector']} post ({item['ticker']} · {item['platform']} {item['handle']}): "
@@ -748,6 +821,7 @@ def run_gemini_quant(
                 model=used_model,
                 base_url=resolved_url,
                 max_briefs=2,
+                project=active_project,
             )
             for b in drafted_briefs:
                 actions_taken.append(

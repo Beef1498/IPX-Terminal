@@ -278,6 +278,12 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, **evaluate_vcrm(db)})
                     return
 
+                if path == "/api/projects":
+                    from ipx_terminal.projects import list_projects
+
+                    self._send_json({"ok": True, "projects": list_projects()})
+                    return
+
                 if path == "/api/quant/export.csv":
                     csv_body = export_quant_factors_csv(db).encode("utf-8")
                     self.send_response(HTTPStatus.OK)
@@ -578,17 +584,34 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, **result})
                     return
 
+                if path.startswith("/api/projects/") and path.endswith("/seed"):
+                    from ipx_terminal.projects import get_project, seed_project_entities
+
+                    proj_id = path[len("/api/projects/") : -len("/seed")].strip("/")
+                    proj = get_project(proj_id)
+                    if not proj:
+                        self._send_json({"error": f"Project '{proj_id}' not found"}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    res = seed_project_entities(db, proj)
+                    self._send_json({"ok": True, **res})
+                    return
+
                 if path == "/api/briefs/generate":
+                    from ipx_terminal.projects import get_default_active_project, get_project
+
                     sig = db.get_signal(int(body["signal_id"]))
                     if not sig:
                         self._send_json({"error": "Signal not found"}, status=HTTPStatus.NOT_FOUND)
                         return
+                    proj_id = body.get("project_id")
+                    proj = get_project(str(proj_id)) if proj_id else get_default_active_project()
                     draft = generate_creative_brief(
                         signal=sig,
                         target_platform=str(body.get("target_platform", "TikTok")),
                         api_key=body.get("api_key") or None,
                         base_url=body.get("base_url") or DEFAULT_AI_BASE_URL,
                         model=body.get("model") or DEFAULT_AI_MODEL,
+                        project=proj,
                     )
                     self._send_json({"ok": True, "draft": draft})
                     return

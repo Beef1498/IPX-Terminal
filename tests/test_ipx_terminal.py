@@ -671,6 +671,81 @@ class TestIPXTerminal(unittest.TestCase):
         ing3 = ingest_daily_niche_creators(db=self.db, watchlist_path=wl_path, max_creators=2, fetcher=_fake_fetch)
         self.assertEqual(ing3["ingested_count"], 0)
 
+    def test_street_mob_client_project_and_niche_priority(self) -> None:
+        from ipx_terminal.ai_scorer import generate_creative_brief
+        from ipx_terminal.projects import (
+            get_default_active_project,
+            get_project,
+            list_projects,
+            rank_catalog_tracks_for_signal,
+            seed_project_entities,
+        )
+        from ipx_terminal.quant_agent import ingest_daily_niche_creators
+
+        projs = list_projects()
+        self.assertTrue(any(p["id"] == "street_mob" for p in projs))
+        proj = get_project("street_mob")
+        self.assertIsNotNone(proj)
+        assert proj is not None
+        self.assertEqual(get_default_active_project()["id"], "street_mob")
+
+        # Seed roster entities into SQLite
+        seeded = seed_project_entities(self.db, proj)
+        self.assertGreaterEqual(seeded["seeded_count"], 5)
+        frzr = self.db.get_entity("FRZR.MU")
+        self.assertIsNotNone(frzr)
+        self.assertEqual(frzr["owner_holder"], "Street Mob Records")
+
+        # Cross-niche track matching + fallback brief generation
+        sig = self.db.insert_signal(
+            ticker="KATT.FMT",
+            title="Viral relational roast CapCut template",
+            summary="High-share POV roast template exploding in group chats with 45% share-to-like.",
+            platforms=["TikTok"],
+            metrics={"views": 500_000, "likes": 40_000, "shares": 18_000},
+            samples=["POV: when your ex texts at 2am"],
+            sector="POP",
+        )
+        ranked = rank_catalog_tracks_for_signal(proj, sig, limit=2)
+        self.assertGreaterEqual(len(ranked), 1)
+        draft = generate_creative_brief(signal=sig, target_platform="TikTok", api_key="", project=proj)
+        self.assertEqual(draft.get("project_id"), "street_mob")
+        self.assertIn("Street Mob", draft["angle"])
+        self.assertTrue(draft.get("matched_track"))
+
+        # Priority project slots in daily niche rotation
+        wl_path = Path(self._tmp.name) / "watchlist_proj.json"
+        wl_path.write_text(
+            json.dumps(
+                [
+                    {"platform": "YouTube Shorts", "handle": "ign", "sector": "GAMING"},
+                    {"platform": "YouTube Shorts", "handle": "espn", "sector": "SPORTS"},
+                    {"platform": "TikTok", "handle": "fuerzaregida", "sector": "MUSIC", "niche": "street_mob_roster", "project": "street_mob"},
+                    {"platform": "Instagram Reels", "handle": "foosgonewild", "sector": "POP", "niche": "latin_pov_comedy", "project": "street_mob"},
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        def _fake_fetch(plat: str, handle: str):
+            return [
+                {"url": f"https://example.com/{handle}/post1", "title": f"Post by {handle}", "views": 120_000, "likes": 8_000, "shares": 2_000}
+            ]
+
+        res = ingest_daily_niche_creators(
+            db=self.db,
+            watchlist_path=wl_path,
+            max_creators=3,
+            fetcher=_fake_fetch,
+            priority_project="street_mob",
+            priority_niches=proj["priority_niches"],
+            priority_slots=2,
+        )
+        self.assertEqual(res["ingested_count"], 3)
+        handles = {item["handle"] for item in res["ingested"]}
+        self.assertIn("@fuerzaregida", handles)
+        self.assertIn("@foosgonewild", handles)
+
 
 if __name__ == "__main__":
     unittest.main()

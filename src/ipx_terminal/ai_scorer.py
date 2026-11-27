@@ -153,10 +153,42 @@ def score_signal_with_ai(
     }
 
 
-def _fallback_brief_template(signal: Dict[str, Any], target_platform: str) -> Dict[str, Any]:
+def _fallback_brief_template(
+    signal: Dict[str, Any],
+    target_platform: str,
+    project: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Deterministic anti-slop editable draft brief when no AI API key is configured."""
     ent = (signal.get("entities_mentioned") or [signal["ticker"]])[0]
     sample = (signal.get("samples") or [signal["title"]])[0].strip("'\"")
+    if project:
+        from ipx_terminal.projects import rank_catalog_tracks_for_signal
+
+        ranked = rank_catalog_tracks_for_signal(project, signal, limit=1)
+        track = ranked[0] if ranked else None
+        proj_name = str(project.get("name") or project.get("id") or "Client Project")
+        if track:
+            artist = track.get("artist") or proj_name
+            title = track.get("title") or "Priority Track"
+            clip_ts = track.get("clip_timestamp") or "chorus drop"
+            sound_cue = track.get("sound_cue") or f"Drop {artist} — '{title}' at {clip_ts}."
+            return {
+                "model_used": "template_draft",
+                "target_platform": target_platform,
+                "project_id": project.get("id"),
+                "matched_track": f"{artist} — {title}",
+                "angle": f"[{proj_name}] Audio-flip '{title}' ({artist}) onto the {ent} format",
+                "hook_2s": f"Cold open on relatable {ent} POV setup (0.0-1.5s) cutting straight into '{title}' at {clip_ts}.",
+                "on_screen_text": f"POV: cuando pasa esto y suena {title}...",
+                "caption": f"{sample[:95]} — {artist} '{title}' ({proj_name})",
+                "edit_beats": [
+                    "0.0-1.8s: Relatable POV text lock matching the emerging trend format",
+                    f"1.8-5.0s: Build tension right before '{title}' ({clip_ts}) hits",
+                    f"5.0-9.0s: Beat-drop punchline synced to {artist} — '{title}' for 'Use This Sound' remakes",
+                    "9.0-11.0s: Clean seamless loop back into frame 1",
+                ],
+                "audio_cue": f"{artist} — '{title}' [{clip_ts}]: {sound_cue}",
+            }
     return {
         "model_used": "template_draft",
         "target_platform": target_platform,
@@ -181,19 +213,55 @@ def generate_creative_brief(
     base_url: Optional[str] = None,
     model: Optional[str] = None,
     timeout: int = 45,
+    project: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generate a native, anti-slop Creative Brief from a t_0 signal (falls back to draft template if no key)."""
     creds = resolve_ai_credentials(api_key=api_key, base_url=base_url, model=model)
     if not creds["api_key"] and "generativelanguage.googleapis.com" in creds["base_url"]:
-        return _fallback_brief_template(signal, target_platform)
+        return _fallback_brief_template(signal, target_platform, project=project)
+
+    project_block = ""
+    top_track_label = ""
+    if project:
+        from ipx_terminal.projects import rank_catalog_tracks_for_signal
+
+        candidates = rank_catalog_tracks_for_signal(project, signal, limit=3)
+        if candidates:
+            top_track_label = f"{candidates[0].get('artist', '')} — {candidates[0].get('title', '')}".strip(" —")
+        compact_tracks = [
+            {
+                "artist": t.get("artist"),
+                "title": t.get("title"),
+                "status": t.get("status"),
+                "clip_timestamp": t.get("clip_timestamp"),
+                "hook_lyric": t.get("hook_lyric"),
+                "vibe_tags": t.get("vibe_tags"),
+                "sound_cue": t.get("sound_cue"),
+            }
+            for t in candidates
+        ]
+        project_block = (
+            f"\nClient Project: {project.get('name')} (Label: {project.get('label_name')})\n"
+            f"Languages / Voice: {project.get('languages')} | {project.get('brand_voice')}\n"
+            f"Target US/MX Geos: {project.get('target_geos')}\n"
+            f"Best-Fit Client Catalog Tracks to Seed:\n{json.dumps(compact_tracks, ensure_ascii=False)}\n"
+            "IMPORTANT: Pick the single strongest matching track from the Client Catalog above, localize/adapt "
+            "the trend format natively into the client's voice (Spanish or natural Spanglish), and put the exact "
+            "track title, artist, and clip_timestamp inside 'audio_cue' so creators can immediately replicate it.\n"
+        )
 
     system_prompt = (
-        "You are an elite viral short-form creative director who understands TikTok, Instagram Reels, "
-        "YouTube Shorts, and X subcultures deeply. Never write corporate or AI-sounding hooks, cringe emojis, "
-        "or generic 'Wait until the end!' clickbait. Return STRICT JSON with keys: "
-        "'angle' (string), 'hook_2s' (string), 'on_screen_text' (string, <=12 words), "
-        "'caption' (string, native & punchy), 'edit_beats' (list of 3-4 concise timed beat strings), "
-        "and 'audio_cue' (string)."
+        "You are an elite viral short-form creative director & music trend strategist for TikTok, Instagram Reels, "
+        "YouTube Shorts, and X. Our core goal for music clients is SONG-SEEDING & TREND CREATION: designing "
+        "replicable POV, meme, CapCut-template, or reaction formats that put a client's song behind the video "
+        "so viewers tap 'Use This Sound' and make their own versions. Never write corporate/AI-sounding hooks, "
+        "cringe emojis, or generic 'Wait until the end!' clickbait. Return STRICT JSON with keys: "
+        "'angle' (string: replicable trend/POV format concept), "
+        "'hook_2s' (string: 0.0-2.0s visual/audio scroll-stop), "
+        "'on_screen_text' (string, <=12 words, relatable template text viewers can copy), "
+        "'caption' (string, native & share-triggering), "
+        "'edit_beats' (list of 3-4 concise timed beat strings including exact beat-drop/chorus hit), and "
+        "'audio_cue' (string: exact song placement, beat-drop timing, and why viewers will click 'Use This Sound')."
     )
     user_prompt = (
         f"Target Platform: {target_platform}\n"
@@ -201,7 +269,8 @@ def generate_creative_brief(
         f"Signal Title: {signal['title']}\n"
         f"t_0 Summary: {signal['summary']}\n"
         f"Verbatim Samples: {json.dumps(signal.get('samples', []), ensure_ascii=False)}\n"
-        f"Metrics: {json.dumps(signal.get('metrics', {}), ensure_ascii=False)}\n\n"
+        f"Metrics: {json.dumps(signal.get('metrics', {}), ensure_ascii=False)}\n"
+        f"{project_block}\n"
         "Create a sharp, native creative brief that could realistically break out on this platform."
     )
     payload = {
@@ -229,7 +298,7 @@ def generate_creative_brief(
         beats = parsed.get("edit_beats") or []
         if not isinstance(beats, list):
             beats = [str(beats)]
-        return {
+        out = {
             "model_used": creds["model"],
             "target_platform": target_platform,
             "angle": str(parsed.get("angle", "")).strip(),
@@ -239,5 +308,10 @@ def generate_creative_brief(
             "edit_beats": [str(b).strip() for b in beats[:5] if str(b).strip()],
             "audio_cue": str(parsed.get("audio_cue", "")).strip(),
         }
+        if project:
+            out["project_id"] = project.get("id")
+            if top_track_label:
+                out["matched_track"] = top_track_label
+        return out
     except Exception:
-        return _fallback_brief_template(signal, target_platform)
+        return _fallback_brief_template(signal, target_platform, project=project)

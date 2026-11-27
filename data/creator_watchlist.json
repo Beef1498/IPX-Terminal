@@ -10,7 +10,8 @@
     "platform": "YouTube Shorts",
     "handle": "mkbhd",
     "sector": "CREATORS",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:04:57Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -34,7 +35,8 @@
     "platform": "Instagram Reels",
     "handle": "colinandsamir",
     "sector": "CREATORS",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:16:00Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -47,7 +49,8 @@
     "platform": "YouTube Shorts",
     "handle": "RickBeato",
     "sector": "MUSIC",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:04:57Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -59,7 +62,8 @@
     "platform": "TikTok",
     "handle": "charlieputh",
     "sector": "MUSIC",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:16:00Z"
   },
   {
     "platform": "Instagram Reels",
@@ -78,13 +82,15 @@
     "platform": "YouTube Shorts",
     "handle": "ScreenRant",
     "sector": "FILM_TV",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:04:57Z"
   },
   {
     "platform": "YouTube Shorts",
     "handle": "CorridorCrew",
     "sector": "FILM_TV",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:16:00Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -109,7 +115,8 @@
     "platform": "YouTube Shorts",
     "handle": "penguinz0",
     "sector": "GAMING",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:04:57Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -134,7 +141,8 @@
     "platform": "YouTube Shorts",
     "handle": "HouseofHighlights",
     "sector": "SPORTS",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:04:57Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -158,7 +166,8 @@
     "platform": "Instagram Reels",
     "handle": "houseofhighlights",
     "sector": "SPORTS",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:16:00Z"
   },
   {
     "platform": "X",
@@ -176,7 +185,8 @@
     "platform": "TikTok",
     "handle": "complex",
     "sector": "POP",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T18:16:00Z"
   },
   {
     "platform": "Instagram Reels",
@@ -207,5 +217,256 @@
     "handle": "frontofficesports",
     "sector": "DEALS",
     "last_pulled_at": "2026-11-26T00:57:00Z"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "pubity",
+    "sector": "POP",
+    "niche": "pop_culture_memes"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "pubity",
+    "sector": "POP",
+    "niche": "pop_culture_memes"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "betches",
+    "sector": "POP",
+    "niche": "relatable_pov_comedy"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "betches",
+    "sector": "POP",
+    "niche": "relatable_pov_comedy"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "barstoolsports",
+    "sector": "POP",
+    "niche": "viral_culture_memes"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "theshaderoom",
+    "sector": "POP",
+    "niche": "celebrity_pop_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "theshaderoom",
+    "sector": "POP",
+    "niche": "celebrity_pop_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "daquan",
+    "sector": "POP",
+    "niche": "meme_templates"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "fckjerry",
+    "sector": "POP",
+    "niche": "meme_templates"
+  },
+  {
+    "platform": "X",
+    "handle": "PopBase",
+    "sector": "POP",
+    "niche": "pop_culture_breaking"
+  },
+  {
+    "platform": "X",
+    "handle": "PopCrave",
+    "sector": "POP",
+    "niche": "pop_culture_breaking"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "genius",
+    "sector": "MUSIC",
+    "niche": "music_discovery"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "rap",
+    "sector": "MUSIC",
+    "niche": "hiphop_music_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "rap",
+    "sector": "MUSIC",
+    "niche": "hiphop_music_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "lyricallemonade",
+    "sector": "MUSIC",
+    "niche": "hiphop_music_visuals"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "billboard",
+    "sector": "MUSIC",
+    "niche": "music_charts_pop"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "rollingstone",
+    "sector": "MUSIC",
+    "niche": "music_pop_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "nfrpodcast",
+    "sector": "MUSIC",
+    "niche": "hiphop_debate"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "overtime",
+    "sector": "SPORTS",
+    "niche": "youth_sports_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "overtime",
+    "sector": "SPORTS",
+    "niche": "youth_sports_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "alixearle",
+    "sector": "CREATORS",
+    "niche": "lifestyle_grwm_trends"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "charlidamelio",
+    "sector": "CREATORS",
+    "niche": "dance_sound_trends"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "fuerzaregida",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "fuerzaregida",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "streetmobrecords",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "chinopacas",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "calle24oficial",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "claveespecial",
+    "sector": "MUSIC",
+    "niche": "street_mob_roster",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "billboardlatin",
+    "sector": "MUSIC",
+    "niche": "musica_mexicana_trends",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "billboardlatin",
+    "sector": "MUSIC",
+    "niche": "musica_mexicana_trends",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "spotifymexico",
+    "sector": "MUSIC",
+    "niche": "musica_mexicana_trends",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "spotifymexico",
+    "sector": "MUSIC",
+    "niche": "musica_mexicana_trends",
+    "project": "street_mob"
+  },
+  {
+    "platform": "YouTube Shorts",
+    "handle": "pepegarza",
+    "sector": "MUSIC",
+    "niche": "musica_mexicana_trends",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "foosgonewild",
+    "sector": "POP",
+    "niche": "latin_pov_comedy",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "foosgonewild",
+    "sector": "POP",
+    "niche": "latin_pov_comedy",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "wearemitu",
+    "sector": "POP",
+    "niche": "latin_pov_comedy",
+    "project": "street_mob"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "wearemitu",
+    "sector": "POP",
+    "niche": "latin_pov_comedy",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "perolike",
+    "sector": "POP",
+    "niche": "latin_pov_comedy",
+    "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "corridostumbados",
+    "sector": "MUSIC",
+    "niche": "corridos_edits",
+    "project": "street_mob"
   }
 ]

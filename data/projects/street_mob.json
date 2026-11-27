@@ -1,0 +1,140 @@
+{
+  "id": "street_mob",
+  "name": "Fuerza Regida / Street Mob Records",
+  "label_name": "Street Mob Records",
+  "active": true,
+  "primary": true,
+  "sector": "MUSIC",
+  "languages": ["es", "en-es"],
+  "target_geos": ["CA", "TX", "AZ", "NV", "IL", "NM", "CO", "NY", "FL"],
+  "priority_niches": [
+    "street_mob_roster",
+    "musica_mexicana_trends",
+    "latin_pov_comedy",
+    "corridos_edits"
+  ],
+  "brand_voice": "Authentic Regional Mexican / Musica Mexicana & LA/IE bilingual street culture. Raw, unpolished, confident, and relatable (desamor, toxic-relationship POVs, trokiando/car edits, nightlife/antros, hustle/flex). Zero corporate copy or translated-AI slang.",
+  "roster_entities": [
+    {
+      "ticker": "FRZR.MU",
+      "name": "Fuerza Regida",
+      "ip_type": "artist",
+      "aliases": ["Fuerza Regida", "JOP", "Jesus Ortiz Paz", "FuerzaRegida", "Street Mob"],
+      "description": "Flagship Musica Mexicana / Corridos Tumbados group led by JOP; core client anchor for Street Mob Records."
+    },
+    {
+      "ticker": "STMOB.MU",
+      "name": "Street Mob Records",
+      "ip_type": "label",
+      "aliases": ["Street Mob", "Street Mob Records", "StreetMob"],
+      "description": "Independent Musica Mexicana & Latin urban record label founded by Jesus Ortiz Paz (JOP)."
+    },
+    {
+      "ticker": "CHPC.MU",
+      "name": "Chino Pacas",
+      "ip_type": "artist",
+      "aliases": ["Chino Pacas", "ChinoPacas"],
+      "description": "Street Mob Records breakout corridos artist with high TikTok/Reels edit velocity."
+    },
+    {
+      "ticker": "CL24.MU",
+      "name": "Calle 24",
+      "ip_type": "artist",
+      "aliases": ["Calle 24", "Calle24"],
+      "description": "Street Mob Records / Chihuahua corridos group known for high-share audio flips and collaborations."
+    },
+    {
+      "ticker": "CLVE.MU",
+      "name": "Clave Especial",
+      "ip_type": "artist",
+      "aliases": ["Clave Especial", "ClaveEspecial"],
+      "description": "Emerging Street Mob Records roster act with strong youth regional Mexican crossover potential."
+    },
+    {
+      "ticker": "ARMT.MU",
+      "name": "Armenta",
+      "ip_type": "artist",
+      "aliases": ["Armenta", "Street Mob Armenta"],
+      "description": "Street Mob Records artist and songwriter driving modern corridos hooks."
+    }
+  ],
+  "catalog_tracks": [
+    {
+      "track_id": "frzr-tu-boda",
+      "artist": "Fuerza Regida & Oscar Maydon",
+      "title": "Tu Boda",
+      "status": "catalog_revival",
+      "vibe_tags": ["desamor", "heartbreak", "toxic_pov", "relational_roast", "ex", "drama", "wedding", "betrayal"],
+      "format_archetypes": ["relatable_pov", "text_overlay_storytime", "group_chat_roast", "late_night_drive"],
+      "clip_timestamp": "0:42-0:57 (chorus swell)",
+      "hook_lyric": "Quiero manchar el vestido blanco de rojo...",
+      "sound_cue": "Drop 'Tu Boda' at 0:42 right on the punchline cut so viewers tap 'Use This Sound' for their own toxic-ex / situationship POV."
+    },
+    {
+      "track_id": "frzr-harley-quinn",
+      "artist": "Fuerza Regida & Marshmello",
+      "title": "HARLEY QUINN",
+      "status": "catalog_revival",
+      "vibe_tags": ["party", "antros", "club", "hype", "transition", "grwm", "outfit", "nightlife", "dance", "energy"],
+      "format_archetypes": ["grwm_transition", "nightlife_recap", "sports_highlight", "high_energy_capcut"],
+      "clip_timestamp": "0:34-0:49 (EDM-corrido drop)",
+      "hook_lyric": "Ponte las pilas que ya nos vamos...",
+      "sound_cue": "Sync hard visual cut or fit-check reveal to the 0:34 corrido-to-EDM beat drop for high-velocity CapCut remakes."
+    },
+    {
+      "track_id": "frzr-nel",
+      "artist": "Fuerza Regida",
+      "title": "NEL",
+      "status": "priority_push",
+      "vibe_tags": ["confidence", "moving_on", "roast", "sarcasm", "comedy", "pov", "unbothered", "meme"],
+      "format_archetypes": ["deadpan_pov", "relational_roast", "capcut_template", "reaction_flip"],
+      "clip_timestamp": "0:28-0:43 (hook drop)",
+      "hook_lyric": "Nel, ya no estoy pa' tus juegos...",
+      "sound_cue": "Hit the 'NEL' hook at 0:28 right as the on-screen text delivers the deadpan rejection punchline."
+    },
+    {
+      "track_id": "frzr-sabor-fresa",
+      "artist": "Fuerza Regida",
+      "title": "SABOR FRESA",
+      "status": "catalog_revival",
+      "vibe_tags": ["flex", "luxury", "car", "trokiando", "lifestyle", "summer", "vibe", "aesthetic", "chill"],
+      "format_archetypes": ["car_edit", "lifestyle_montage", "soft_flex_pov", "couple_vibe"],
+      "clip_timestamp": "0:18-0:33 (requinto into vocal entry)",
+      "hook_lyric": "Estilo de vida caro, vibra pesada...",
+      "sound_cue": "Open on the requinto intro at 0:18 with slow-pan car/lifestyle footage and cut on the vocal entry at 0:23."
+    },
+    {
+      "track_id": "frzr-bebe-dame",
+      "artist": "Fuerza Regida & Grupo Frontera",
+      "title": "Bebe Dame",
+      "status": "catalog_revival",
+      "vibe_tags": ["romance", "couple", "longing", "cumbia", "dance", "nostalgia", "wholesome", "family"],
+      "format_archetypes": ["couple_pov", "dance_trend", "throwback_edit", "wholesome_meme"],
+      "clip_timestamp": "0:36-0:51 (chorus)",
+      "hook_lyric": "Bebe dame otra oportunidad...",
+      "sound_cue": "Layer the 0:36 chorus over relatable couple/family humor or throwback photo carousels."
+    },
+    {
+      "track_id": "chpc-gordo-mando",
+      "artist": "Chino Pacas",
+      "title": "El Gordo Trae El Mando",
+      "status": "catalog_revival",
+      "vibe_tags": ["hustle", "gym", "sports", "win", "boss", "flex", "corrido_belico", "truck", "grit"],
+      "format_archetypes": ["gym_pr_edit", "sports_highlight", "hustle_montage", "trokiando_edit"],
+      "clip_timestamp": "0:14-0:29 (bass + brass hit)",
+      "hook_lyric": "Y puro Street Mob...",
+      "sound_cue": "Drop at 0:14 on the heavy bass hit for sports highlights, gym PRs, or truck/car reveal cuts."
+    },
+    {
+      "track_id": "cl24-que-onda",
+      "artist": "Calle 24 x Chino Pacas x Fuerza Regida",
+      "title": "Que Onda",
+      "status": "priority_push",
+      "vibe_tags": ["late_night", "texting", "situationship", "vibe", "chill", "night_drive", "relatable", "spanglish"],
+      "format_archetypes": ["late_night_text_pov", "car_interior_pov", "storytime", "audio_flip"],
+      "clip_timestamp": "0:22-0:37 (chorus)",
+      "hook_lyric": "Que onda, dime que vamos a hacer...",
+      "sound_cue": "Use 0:22 under late-night drive / '2am text you shouldn't send' POV templates to trigger group-chat shares."
+    }
+  ]
+}

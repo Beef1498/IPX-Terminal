@@ -152,7 +152,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_qr.add_argument("--mode", default="morning", choices=("morning", "intraday"))
     p_qr.add_argument("--model", default=None, help="Override Gemini model (default: gemini-2.5-pro / gemini-3.5-flash-lite).")
     p_qr.add_argument("--max-calls", type=int, default=2, help="Max t_0 calls to log per run (default: 2).")
+    p_qr.add_argument("--project", default=None, help="Client project ID for niche priority & song-seeding briefs (e.g. street_mob).")
     p_qr.add_argument("--dry-run", action="store_true", help="Generate memo without writing new signals/calls to SQLite.")
+
+    p_proj = sub.add_parser(
+        "projects",
+        help="List client projects / music catalogs or seed a project's roster entities into SQLite.",
+    )
+    p_proj.add_argument("--seed", default=None, help="Project ID to seed roster entities into SQLite (e.g. street_mob).")
 
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
@@ -438,12 +445,40 @@ def main(argv: Optional[List[str]] = None) -> int:
             model=args.model,
             dry_run=args.dry_run,
             max_calls=args.max_calls,
+            project_id=args.project,
         )
         print(f"Gemini Quant [{memo['mode'].upper()}] ({memo['model_used']}) — {memo['headline']}")
         print(memo["executive_summary"])
         for act in memo.get("actions_taken") or []:
             print(f"  + {act}")
         print(f"Memo saved -> {memo.get('memo_path', '')}")
+        return 0
+
+    if args.command == "projects":
+        from ipx_terminal.projects import get_project, list_projects, seed_project_entities
+
+        if args.seed:
+            proj = get_project(args.seed)
+            if not proj:
+                print(f"Project '{args.seed}' not found in data/projects/")
+                return 1
+            res = seed_project_entities(db, proj)
+            print(f"Seeded {res['seeded_count']} entities for project '{res['project_name']}' ({res['project_id']}):")
+            for ent in res["entities"]:
+                print(f"  - {ent['ticker']} | {ent['name']} ({ent['sector']} · {ent['owner_holder']})")
+            return 0
+        projs = list_projects()
+        if not projs:
+            print("No client projects configured in data/projects/.")
+            return 0
+        for p in projs:
+            tag = " [PRIMARY]" if p.get("primary") else ""
+            print(
+                f"- {p['id']}{tag}: {p.get('name')} | "
+                f"{len(p.get('roster_entities') or [])} roster entities | "
+                f"{len(p.get('catalog_tracks') or [])} catalog tracks | "
+                f"niches={','.join(p.get('priority_niches') or [])}"
+            )
         return 0
 
     if args.command == "serve":
