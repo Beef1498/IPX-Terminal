@@ -31,10 +31,16 @@ _GITHUB_CACHE_TTL_SEC = 300.0
 # Write-Passcode / Token Auth (2A: Public Read-Only + Passcode Writes)
 # ------------------------------------------------------------------
 def get_configured_write_token() -> str:
-    return (
+    direct = (
         os.environ.get("IPX_WRITE_TOKEN", "").strip()
         or os.environ.get("IPX_ADMIN_PASSCODE", "").strip()
     )
+    if direct:
+        return direct
+    for k, v in os.environ.items():
+        if k.upper() in ("IPX_WRITE_TOKEN", "IPX_ADMIN_PASSCODE") and v.strip():
+            return v.strip()
+    return ""
 
 
 def extract_request_token(headers: Any) -> str:
