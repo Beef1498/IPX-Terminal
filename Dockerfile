@@ -15,6 +15,8 @@ COPY schemas ./schemas
 COPY data/orchestration.json ./data/orchestration.json
 COPY data/creator_watchlist.json ./data/creator_watchlist.json
 COPY data/requirements_vcrm.json ./data/requirements_vcrm.json
+COPY data/cultural_timeline.json ./data/cultural_timeline.json
+COPY data/projects ./data/projects
 
 RUN mkdir -p /data /app/exports/ipx-eval /app/data/quant_memos
 

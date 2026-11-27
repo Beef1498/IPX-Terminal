@@ -756,6 +756,130 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertIn("FACELESS AT SCALE", brief_html)
         self.assertIn("Download Brief (.html)", brief_html)
 
+    def test_cultural_timeline_workspace_and_catalysts(self) -> None:
+        from datetime import date
+        from ipx_terminal.projects import get_project
+        from ipx_terminal.timeline import build_timeline_workspace, get_compact_quant_timeline_context
+
+        # Insert a live signal that should auto-link to Spotify Wrapped / holiday wave
+        self.db.insert_signal(
+            ticker="WRAP.MU",
+            title="Spotify Wrapped 2026 top artist roast meme exploding on TikTok",
+            summary="Creators flipping Spotify Wrapped listening age cards with music behind them.",
+            platforms=["TikTok"],
+            metrics={"views": 450_000, "likes": 35_000, "shares": 9_500, "follower_baseline": 40_000},
+            sector="MUSIC",
+        )
+
+        # Add a custom lineage branch attached to Spotify Wrapped + a standalone future drop
+        child = self.db.create_timeline_catalyst(
+            name="Street Mob Wrapped Fan Roast Push",
+            event_date="2026-12-03",
+            scope="music_industry",
+            parent_anchor_id="spotify_wrapped_week",
+            seed_lead_days=14,
+            target_cities=["Los Angeles", "Houston"],
+            vibe_tags=["roast", "meme", "flex"],
+            project_id="street_mob",
+            notes="Seed top Street Mob tracks behind Wrapped roast templates.",
+        )
+        standalone = self.db.create_timeline_catalyst(
+            name="LA Arena Tour Kickoff",
+            event_date="2026-12-18",
+            scope="regional",
+            seed_lead_days=21,
+            target_cities=["Los Angeles"],
+            vibe_tags=["party", "hype"],
+        )
+
+        proj = get_project("street_mob")
+        ws = build_timeline_workspace(self.db, project=proj, ref_date=date(2026, 11, 27))
+        self.assertEqual(ws["reference_date"], "2026-11-27")
+        self.assertGreaterEqual(ws["summary"]["total_anchors"], 25)
+        self.assertEqual(ws["summary"]["custom_catalysts"], 2)
+        self.assertTrue(ws["priority_cities_now"])
+
+        active_ids = {n["id"] for n in ws["active_seeding_window"]}
+        self.assertIn("spotify_wrapped_week", active_ids)
+        self.assertIn("christmas_holiday_peak", active_ids)
+
+        wrapped_node = next(n for n in ws["timeline_nodes"] if n["id"] == "spotify_wrapped_week")
+        self.assertTrue(any(sig["ticker"] == "WRAP.MU" for sig in wrapped_node["linked_signals"]))
+        self.assertEqual(len(wrapped_node["child_catalysts"]), 1)
+        self.assertEqual(wrapped_node["child_catalysts"][0]["name"], "Street Mob Wrapped Fan Roast Push")
+        if proj:
+            self.assertTrue(wrapped_node["matched_tracks"])
+
+        compact = get_compact_quant_timeline_context(self.db, project=proj, ref_date=date(2026, 11, 27))
+        self.assertTrue(compact["seed_now_waves"])
+        self.assertTrue(compact["priority_spotify_cities_now"])
+
+        # Delete custom catalysts cleanly
+        self.assertTrue(self.db.delete_timeline_catalyst(child["id"]))
+        self.assertTrue(self.db.delete_timeline_catalyst(standalone["id"]))
+        self.assertEqual(len(self.db.list_timeline_catalysts()), 0)
+
+        # Live ESPN Pro & College Sports schedule sync (deterministic mock + dedup check)
+        from ipx_terminal.timeline import sync_espn_sports_schedules
+
+        def _fake_espn(league_path: str, start_ymd: str, end_ymd: str):
+            if league_path == "football/college-football":
+                return {
+                    "events": [
+                        {
+                            "date": "2026-12-05T21:00Z",
+                            "shortName": "TEX vs UGA",
+                            "competitions": [
+                                {
+                                    "venue": {"fullName": "Mercedes-Benz Stadium", "address": {"city": "Atlanta"}},
+                                    "notes": [{"headline": "SEC Championship"}],
+                                    "competitors": [{"curatedRank": {"current": 2}}, {"curatedRank": {"current": 4}}],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            if league_path == "basketball/nba":
+                return {
+                    "events": [
+                        {
+                            "date": "2026-12-02T03:00Z",
+                            "shortName": "BOS @ LAL",
+                            "competitions": [
+                                {
+                                    "venue": {"fullName": "Crypto.com Arena", "address": {"city": "Los Angeles"}},
+                                    "notes": [],
+                                    "competitors": [],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            return {"events": []}
+
+        sync1 = sync_espn_sports_schedules(
+            db=self.db,
+            days_ahead=21,
+            leagues=["CFB", "NBA"],
+            ref_date=date(2026, 11, 27),
+            fetcher=_fake_espn,
+        )
+        self.assertEqual(sync1["added_count"], 2)
+        cfb_item = next(x for x in sync1["added"] if "[CFB]" in x["name"])
+        self.assertEqual(cfb_item["parent_anchor_id"], "cfb_rivalry_and_conf_championships")
+        self.assertEqual(cfb_item["target_cities"], ["Atlanta"])
+
+        # Re-running sync must deduplicate cleanly
+        sync2 = sync_espn_sports_schedules(
+            db=self.db,
+            days_ahead=21,
+            leagues=["CFB", "NBA"],
+            ref_date=date(2026, 11, 27),
+            fetcher=_fake_espn,
+        )
+        self.assertEqual(sync2["added_count"], 0)
+        self.assertEqual(sync2["skipped_existing"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

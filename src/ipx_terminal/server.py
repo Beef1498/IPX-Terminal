@@ -255,8 +255,15 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     return
 
                 if path == "/api/quant":
-                    from ipx_terminal.projects import list_projects
+                    from ipx_terminal.projects import get_default_active_project, get_project, list_projects
                     from ipx_terminal.quant_agent import list_quant_memos
+                    from ipx_terminal.timeline import get_compact_quant_timeline_context
+
+                    proj_param = qs.get("project_id", [""])[0]
+                    if str(proj_param).upper() == "NONE":
+                        proj = None
+                    else:
+                        proj = get_project(proj_param) if proj_param else get_default_active_project()
 
                     memos = list_quant_memos(limit=5)
                     self._send_json(
@@ -266,8 +273,21 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                             "latest_memo": memos[0] if memos else None,
                             "memos_count": len(memos),
                             "projects": list_projects(),
+                            "active_timeline": get_compact_quant_timeline_context(db=db, project=proj),
                         }
                     )
+                    return
+
+                if path == "/api/timeline":
+                    from ipx_terminal.projects import get_default_active_project, get_project
+                    from ipx_terminal.timeline import build_timeline_workspace
+
+                    proj_param = qs.get("project_id", [""])[0]
+                    if str(proj_param).upper() == "NONE":
+                        proj = None
+                    else:
+                        proj = get_project(proj_param) if proj_param else get_default_active_project()
+                    self._send_json({"ok": True, **build_timeline_workspace(db=db, project=proj)})
                     return
 
                 if path == "/api/quant/memos":
@@ -623,6 +643,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
 
                 if path == "/api/briefs/generate":
                     from ipx_terminal.projects import get_default_active_project, get_project
+                    from ipx_terminal.timeline import get_compact_quant_timeline_context
 
                     sig = db.get_signal(int(body["signal_id"]))
                     if not sig:
@@ -640,6 +661,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         base_url=body.get("base_url") or DEFAULT_AI_BASE_URL,
                         model=body.get("model") or DEFAULT_AI_MODEL,
                         project=proj,
+                        timeline_context=get_compact_quant_timeline_context(db=db, project=proj),
                     )
                     self._send_json({"ok": True, "draft": draft})
                     return
@@ -701,6 +723,50 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         version=str(body.get("version", "0.5")),
                     )
                     self._send_json({"ok": True, **result})
+                    return
+
+                if path == "/api/timeline/sync-sports":
+                    from ipx_terminal.timeline import sync_espn_sports_schedules
+
+                    res = sync_espn_sports_schedules(
+                        db=db,
+                        days_ahead=int(body.get("days_ahead", 21)),
+                        leagues=body.get("leagues") or None,
+                        max_per_league=int(body.get("max_per_league", 4)),
+                    )
+                    self._send_json({"ok": True, **res}, status=HTTPStatus.CREATED)
+                    return
+
+                if path == "/api/timeline/catalysts":
+                    cities = body.get("target_cities", [])
+                    if isinstance(cities, str):
+                        cities = [c.strip() for c in cities.split(",") if c.strip()]
+                    vibes = body.get("vibe_tags", [])
+                    if isinstance(vibes, str):
+                        vibes = [v.strip() for v in vibes.split(",") if v.strip()]
+                    cat = db.create_timeline_catalyst(
+                        name=str(body["name"]),
+                        event_date=str(body["event_date"]),
+                        scope=str(body.get("scope", "custom")),
+                        parent_anchor_id=str(body.get("parent_anchor_id", "")),
+                        seed_lead_days=int(body.get("seed_lead_days", 21)),
+                        target_cities=cities,
+                        vibe_tags=vibes,
+                        first_mover_cohort=str(body.get("first_mover_cohort", "")),
+                        project_id=str(body.get("project_id", "")),
+                        notes=str(body.get("notes", "")),
+                        source=str(body.get("source", "manual")),
+                    )
+                    self._send_json({"ok": True, "catalyst": cat}, status=HTTPStatus.CREATED)
+                    return
+
+                if path.startswith("/api/timeline/catalysts/") and path.endswith("/delete"):
+                    cat_id_str = path[len("/api/timeline/catalysts/") : -len("/delete")].strip("/")
+                    deleted = db.delete_timeline_catalyst(int(cat_id_str))
+                    if not deleted:
+                        self._send_json({"error": f"Catalyst #{cat_id_str} not found"}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_json({"ok": True, "deleted_id": int(cat_id_str)})
                     return
 
                 if path == "/api/quant/run":

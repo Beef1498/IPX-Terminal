@@ -26,6 +26,7 @@ from ipx_terminal.ingest import (
     recheck_overdue_predictions,
 )
 from ipx_terminal.quant import build_quant_workspace
+from ipx_terminal.timeline import get_compact_quant_timeline_context, sync_espn_sports_schedules
 
 DEFAULT_MORNING_MODEL = "gemini-2.5-pro"
 DEFAULT_INTRADAY_MODEL = "gemini-3.5-flash-lite"
@@ -289,6 +290,7 @@ def auto_draft_morning_briefs(
             base_url=base_url,
             model=model,
             project=project,
+            timeline_context=get_compact_quant_timeline_context(db=db, project=project),
         )
         saved = db.create_brief(
             signal_id=sig["id"],
@@ -592,6 +594,22 @@ def run_gemini_quant(
                     )
             except Exception as exc:
                 actions_taken.append(f"Daily niche creator rotation skipped: {exc}")
+            try:
+                sports_sync = sync_espn_sports_schedules(db=db, days_ahead=14, max_per_league=3)
+                if sports_sync.get("added_count"):
+                    cities_hit = sorted(
+                        {
+                            c
+                            for item in (sports_sync.get("added") or [])
+                            for c in (item.get("target_cities") or [])
+                        }
+                    )
+                    city_note = f" (Spotify cities: {', '.join(cities_hit[:5])})" if cities_hit else ""
+                    actions_taken.append(
+                        f"Auto-synced {sports_sync['added_count']} upcoming Pro/College Sports catalyst(s) from ESPN{city_note}."
+                    )
+            except Exception as exc:
+                actions_taken.append(f"Daily ESPN sports schedule sync skipped: {exc}")
         try:
             recheck_summary = recheck_overdue_predictions(db=db)
             if recheck_summary.get("checked_count"):
@@ -647,9 +665,11 @@ def run_gemini_quant(
         except Exception:
             map_clusters = []
 
+    timeline_ctx = get_compact_quant_timeline_context(db=db, project=active_project)
     compact_snapshot = {
         "mode": norm_mode,
         "quant_summary": quant_ws.get("summary"),
+        "active_cultural_timeline": timeline_ctx,
         "screener_top": (quant_ws.get("screener") or [])[:12],
         "divergences": (quant_ws.get("divergences") or [])[:8],
         "vcrm_gates": [
@@ -708,6 +728,8 @@ def run_gemini_quant(
         "You are the Lead Quantitative Analyst on IPX Terminal (Content IP & Cultural Velocity Desk). "
         "Follow the strict IPX signal hierarchy: Derivative Remakes / US Geographic Breadth > "
         "Share-to-Like Ratio % > Views-to-Followers Breakout Ratio > Raw Solo Likes. "
+        "Factor in 'active_cultural_timeline' (current seasonal weather mood, upcoming 14-45 day pre-wave seeding anchors, "
+        "and priority Spotify/Billboard US seeding cities) so recommendations seed songs BEFORE peak holidays/events. "
         "NEVER fabricate metrics or 48-72h outcomes. Only reason from the t_0 snapshot provided."
         f"{client_directive}\n"
         "Return STRICT JSON with keys:\n"

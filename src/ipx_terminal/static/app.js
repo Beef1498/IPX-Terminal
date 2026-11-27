@@ -137,8 +137,13 @@ function renderProjectSelector() {
           ? `Active client project: ${proj.name} (${(proj.catalog_tracks || []).length} catalog tracks ready for song-seeding)`
           : "Switched to General IPX view (no client project filter)."
       );
-      if (typeof renderQuantView === "function" && typeof hubState !== "undefined" && hubState.quant) {
+      if (typeof loadQuant === "function" && typeof hubState !== "undefined" && hubState.activeView === "quant") {
+        loadQuant();
+      } else if (typeof renderQuantView === "function" && typeof hubState !== "undefined" && hubState.quant) {
         renderQuantView();
+      }
+      if (typeof loadTimeline === "function" && typeof hubState !== "undefined" && hubState.activeView === "timeline") {
+        loadTimeline();
       }
     });
   }

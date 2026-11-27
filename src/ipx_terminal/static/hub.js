@@ -14,6 +14,10 @@ const hubState = {
   quantMinShare: 0,
   quantMinBreakout: 0,
   quantSortBy: "alpha_score",
+  timeline: null,
+  timelineScopeFilter: "ALL",
+  timelineWindowFilter: "ALL",
+  timelineCityFilter: "ALL",
   orchestration: null,
   selectedHardwareId: null,
   updates: null,
@@ -131,9 +135,9 @@ function openUnlockModal(reason = "") {
 }
 window.openUnlockModal = openUnlockModal;
 
-/* ---------------- Top-Level 5-Tab Switching ---------------- */
+/* ---------------- Top-Level 6-Tab Switching ---------------- */
 async function switchHubView(view, updateHash = true) {
-  const valid = ["evals", "terminal", "quant", "orchestration", "updates"];
+  const valid = ["evals", "terminal", "quant", "timeline", "orchestration", "updates"];
   const target = valid.includes(view) ? view : "terminal";
   hubState.activeView = target;
 
@@ -152,6 +156,8 @@ async function switchHubView(view, updateHash = true) {
     await loadEvals();
   } else if (target === "quant") {
     await loadQuant();
+  } else if (target === "timeline") {
+    await loadTimeline();
   } else if (target === "orchestration") {
     await loadOrchestration();
   } else if (target === "updates") {
@@ -166,7 +172,9 @@ async function loadQuant() {
     el.innerHTML = `<div class="hub-page"><p style="color:#8b9bb0">Loading Quant Desk factor screener &amp; calibration scorecard...</p></div>`;
   }
   try {
-    hubState.quant = await api("/api/quant");
+    const projId = typeof state !== "undefined" && state.activeProjectId ? state.activeProjectId : "";
+    const qs = projId ? `?project_id=${encodeURIComponent(projId)}` : "";
+    hubState.quant = await api(`/api/quant${qs}`);
     renderQuantView();
   } catch (err) {
     el.innerHTML = `<div class="hub-page"><p style="color:#fb7185">Failed to load Quant Desk: ${esc(err.message)}</p></div>`;
@@ -348,6 +356,47 @@ function renderQuantView() {
         </div>`;
       })()}
 
+      ${(() => {
+        const tl = q.active_timeline;
+        if (!tl || !(tl.seed_now_waves || []).length) return "";
+        const season = tl.current_season || {};
+        const cities = (tl.priority_spotify_cities_now || [])
+          .map((c) => `<span class="pill" style="background:rgba(16,185,129,0.14);color:#34d399;border-color:rgba(16,185,129,0.45)">📍 ${esc(c)}</span>`)
+          .join("");
+        const cards = (tl.seed_now_waves || [])
+          .slice(0, 4)
+          .map((w) => {
+            const isPeak = w.status === "PEAK_NOW";
+            const badgeColor = isPeak ? "#f59e0b" : "#10b981";
+            const daysLbl = w.days_until <= 0 ? "ACTIVE NOW" : `T-${w.days_until}d`;
+            const tracksLine = (w.matched_tracks || []).length
+              ? `<div style="margin-top:4px;font-size:10.5px;color:#22d3ee">🎵 Seed: ${esc(w.matched_tracks.join(" · "))}</div>`
+              : "";
+            return `<div style="padding:8px 10px;background:rgba(15,23,42,0.75);border:1px solid rgba(16,185,129,0.28);border-radius:6px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
+                <b style="font-size:12px;color:#f8fafc">${esc(w.name)}</b>
+                <span class="pill" style="color:${badgeColor};border-color:${badgeColor};font-size:9.5px">${esc(w.status)} · ${daysLbl}</span>
+              </div>
+              <div style="font-size:11px;color:#94a3b8;line-height:1.35">${esc(w.spotify_billboard_angle || w.first_mover_cohort || "")}</div>
+              ${tracksLine}
+            </div>`;
+          })
+          .join("");
+        return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.45)">
+          <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+            <span style="color:#34d399">🗓 ACTIVE CULTURAL SEEDING WINDOW // ${esc((season.label || "PRE-WAVE RADAR").toUpperCase())}</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${cities}
+              <button type="button" class="btn-action green" id="btn-quant-open-timeline" style="padding:2px 8px;font-size:10.5px">Open 12-Mo Timeline →</button>
+            </div>
+          </div>
+          <div class="hub-card-body">
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px"><b>Weather / Mood:</b> ${esc(season.weather_vibe || "")} — <b>Collective Mood:</b> ${esc(season.collective_mood || "")}</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">${cards}</div>
+          </div>
+        </div>`;
+      })()}
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
         <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">STRONG SIGNALS</div><div style="font-size:20px;font-weight:800;color:#34d399">${s.strong_signals ?? 0}</div><div style="font-size:10.5px;color:#64748b">${s.watch_signals ?? 0} on watch · ${s.tracked_tickers ?? 0} tracked</div></div>
         <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">QUANT HIT RATE</div><div style="font-size:20px;font-weight:800;color:#22d3ee">${s.human_hit_rate_pct != null ? `${s.human_hit_rate_pct}%` : "--"}</div><div style="font-size:10.5px;color:#64748b">${s.resolved_calls ?? 0} resolved calls</div></div>
@@ -504,6 +553,10 @@ function renderQuantView() {
     state.activeTab = "MAP";
     renderDesk();
   });
+  const openTlBtn = document.getElementById("btn-quant-open-timeline");
+  if (openTlBtn) {
+    openTlBtn.addEventListener("click", () => switchHubView("timeline", true));
+  }
   const seedProjBtn = document.getElementById("btn-seed-active-project");
   if (seedProjBtn && activeProj) {
     seedProjBtn.addEventListener("click", async () => {
@@ -541,6 +594,360 @@ function renderQuantView() {
       const sig = (state.signals || []).find((x) => x.id === Number(btn.dataset.quantLog));
       if (sig && typeof openLogPredictionModal === "function") openLogPredictionModal(sig);
     });
+  });
+}
+
+/* ---------------- TAB 4: CULTURAL TIMELINE & LINEAGE TREE ---------------- */
+async function loadTimeline() {
+  const el = document.getElementById("view-timeline");
+  if (!hubState.timeline) {
+    el.innerHTML = `<div class="hub-page"><p style="color:#8b9bb0">Loading Yearly Cultural Timeline &amp; Spotify/Billboard seeding calendar...</p></div>`;
+  }
+  try {
+    const projId = typeof state !== "undefined" && state.activeProjectId ? state.activeProjectId : "";
+    const qs = projId ? `?project_id=${encodeURIComponent(projId)}` : "";
+    hubState.timeline = await api(`/api/timeline${qs}`);
+    renderTimelineView();
+  } catch (err) {
+    el.innerHTML = `<div class="hub-page"><p style="color:#fb7185">Failed to load Cultural Timeline: ${esc(err.message)}</p></div>`;
+  }
+}
+
+function renderTimelineView() {
+  const el = document.getElementById("view-timeline");
+  const tl = hubState.timeline;
+  if (!el || !tl) return;
+
+  const s = tl.summary || {};
+  const season = tl.current_season || {};
+  const activeProj = typeof getActiveProject === "function" ? getActiveProject() : null;
+  const allNodes = tl.timeline_nodes || [];
+  const allCities = (tl.spotify_billboard_cities || []).map((c) => c.city);
+
+  const filtered = allNodes
+    .filter((n) => hubState.timelineScopeFilter === "ALL" || n.scope === hubState.timelineScopeFilter)
+    .filter((n) => {
+      if (hubState.timelineWindowFilter === "ALL") return true;
+      if (hubState.timelineWindowFilter === "ACTIVE") return n.window_status === "PEAK_NOW" || n.window_status === "SEED_NOW";
+      return n.window_status === hubState.timelineWindowFilter;
+    })
+    .filter((n) => hubState.timelineCityFilter === "ALL" || (n.target_cities || []).includes(hubState.timelineCityFilter));
+
+  const statusBadge = (st, days) => {
+    const dLbl = days <= 0 ? "ACTIVE NOW" : `T-${days}d`;
+    if (st === "PEAK_NOW") return `<span class="pill" style="background:rgba(245,158,11,0.18);color:#f59e0b;border-color:#f59e0b">🔥 PEAK NOW · ${dLbl}</span>`;
+    if (st === "SEED_NOW") return `<span class="pill" style="background:rgba(16,185,129,0.18);color:#34d399;border-color:#10b981">🌱 SEED NOW · ${dLbl}</span>`;
+    if (st === "PREP_NEXT") return `<span class="pill" style="background:rgba(34,211,238,0.14);color:#22d3ee;border-color:#22d3ee">⏳ PREP NEXT · ${dLbl}</span>`;
+    return `<span class="pill" style="color:#94a3b8">${dLbl}</span>`;
+  };
+
+  const scopeBadge = (sc) => {
+    if (sc === "sports") return `<span class="pill" style="color:#38bdf8;border-color:rgba(56,189,248,0.45)">PRO / COLLEGE SPORTS</span>`;
+    if (sc === "regional") return `<span class="pill" style="color:#a78bfa;border-color:rgba(167,139,250,0.45)">REGIONAL / CITY</span>`;
+    if (sc === "music_industry") return `<span class="pill" style="color:#34d399;border-color:rgba(16,185,129,0.45)">SPOTIFY / BILLBOARD</span>`;
+    if (sc === "custom") return `<span class="pill" style="color:#fb7185;border-color:rgba(251,113,133,0.45)">CUSTOM BRANCH</span>`;
+    return `<span class="pill">NATIONAL</span>`;
+  };
+
+  const cityPillsHtml = (tl.priority_cities_now || [])
+    .map(
+      (c) => `<button type="button" class="btn-action ${hubState.timelineCityFilter === c.city ? "green" : ""}" data-tl-city="${esc(c.city)}" style="padding:3px 9px;font-size:11px">📍 ${esc(c.city)} <span style="opacity:0.75">(${c.active_waves})</span></button>`
+    )
+    .join("");
+
+  const nodesHtml = filtered.length
+    ? filtered
+        .map((n) => {
+          const borderCol =
+            n.window_status === "PEAK_NOW"
+              ? "rgba(245,158,11,0.5)"
+              : n.window_status === "SEED_NOW"
+              ? "rgba(16,185,129,0.5)"
+              : n.is_custom
+              ? "rgba(251,113,133,0.45)"
+              : "rgba(51,65,85,0.85)";
+
+          const citiesRow = (n.target_cities || [])
+            .map((c) => `<span class="pill" style="font-size:10px;color:#34d399;border-color:rgba(16,185,129,0.35)">${esc(c)}</span>`)
+            .join("");
+
+          const vibesRow = (n.vibe_tags || [])
+            .slice(0, 6)
+            .map((v) => `<span class="pill" style="font-size:9.5px">${esc(v)}</span>`)
+            .join("");
+
+          const tracksHtml = (n.matched_tracks || []).length
+            ? `<div style="margin-top:8px;padding:6px 8px;background:rgba(34,211,238,0.07);border:1px solid rgba(34,211,238,0.25);border-radius:6px">
+                <div style="font-family:monospace;font-size:9.5px;color:#22d3ee;margin-bottom:3px">🎵 MATCHED CLIENT TRACKS (${esc(activeProj?.name || "CATALOG")})</div>
+                ${n.matched_tracks
+                  .map(
+                    (t) => `<div style="font-size:11px;color:#e2e8f0"><b>${esc(t.artist)} — ${esc(t.title)}</b> <span style="color:#94a3b8;font-family:monospace;font-size:10px">${esc(t.clip_timestamp || "")}</span></div>`
+                  )
+                  .join("")}
+              </div>`
+            : "";
+
+          const signalsHtml = (n.linked_signals || []).length
+            ? `<div style="margin-top:8px;padding:6px 8px;background:rgba(15,23,42,0.75);border-left:2px solid #38bdf8;border-radius:0 6px 6px 0">
+                <div style="font-family:monospace;font-size:9.5px;color:#38bdf8;margin-bottom:4px">↳ AUTO-LINKED LIVE SIGNAL BRANCHES (${n.linked_signals.length})</div>
+                ${n.linked_signals
+                  .map(
+                    (sig) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px;font-size:11px">
+                      <span style="color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                        <button type="button" class="btn-action" data-tl-jump="${esc(sig.ticker)}" style="padding:1px 5px;font-size:10px;font-family:monospace;color:#38bdf8;margin-right:4px">${esc(sig.ticker)}</button>
+                        ${esc(sig.title || "")}
+                      </span>
+                      <span style="font-family:monospace;font-size:10px;color:#34d399;flex-shrink:0">CVS ${Number(sig.cvs_score || 0).toFixed(0)}</span>
+                    </div>`
+                  )
+                  .join("")}
+              </div>`
+            : "";
+
+          const childrenHtml = (n.child_catalysts || []).length
+            ? `<div style="margin-top:8px;padding:6px 8px;background:rgba(251,113,133,0.07);border-left:2px solid #fb7185;border-radius:0 6px 6px 0">
+                <div style="font-family:monospace;font-size:9.5px;color:#fb7185;margin-bottom:4px">↳ CUSTOM LINEAGE BRANCHES (${n.child_catalysts.length})</div>
+                ${n.child_catalysts
+                  .map(
+                    (ch) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px;font-size:11px">
+                      <span style="color:#f8fafc"><b>${esc(ch.name)}</b> <span style="color:#94a3b8">(${esc(ch.next_date)} · T-${ch.days_until}d)</span>${ch.notes ? ` — <span style="color:#cbd5e1">${esc(ch.notes)}</span>` : ""}</span>
+                      <button type="button" class="btn-action" data-tl-del="${ch.id}" style="padding:1px 6px;font-size:9.5px;color:#fb7185;border-color:rgba(251,113,133,0.4)">✕</button>
+                    </div>`
+                  )
+                  .join("")}
+              </div>`
+            : "";
+
+          return `<div class="hub-card" style="border-color:${borderCol};display:flex;flex-direction:column;justify-content:space-between">
+            <div class="hub-card-header" style="flex-wrap:wrap;gap:6px">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-weight:800;color:#f8fafc">${esc(n.name)}</span>
+                ${scopeBadge(n.scope)}
+              </div>
+              <div style="display:flex;align-items:center;gap:5px">
+                ${statusBadge(n.window_status, n.days_until)}
+                ${n.is_custom && n.custom_id ? `<button type="button" class="btn-action" data-tl-del="${n.custom_id}" style="padding:1px 6px;font-size:10px;color:#fb7185">✕</button>` : ""}
+              </div>
+            </div>
+            <div class="hub-card-body">
+              <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:11px;color:#94a3b8;margin-bottom:6px">
+                <span>📅 <b>${esc(n.next_date)}</b> · Pre-Wave Seed: <b>${n.seed_lead_days}d before</b></span>
+                <span>🎯 First Movers: <b style="color:#e2e8f0">${esc(n.first_mover_cohort || "--")}</b></span>
+              </div>
+              ${n.spotify_billboard_angle ? `<div style="font-size:11.5px;color:#cbd5e1;margin-bottom:8px;line-height:1.4"><b style="color:#34d399">Spotify / Billboard Edge:</b> ${esc(n.spotify_billboard_angle)}</div>` : ""}
+              ${citiesRow ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">${citiesRow}</div>` : ""}
+              ${vibesRow ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${vibesRow}</div>` : ""}
+              ${tracksHtml}
+              ${signalsHtml}
+              ${childrenHtml}
+            </div>
+          </div>`;
+        })
+        .join("")
+    : `<div class="hub-card" style="grid-column:1/-1;padding:24px;text-align:center;color:#94a3b8">No timeline anchors match your current filters. Try clearing the City or Scope filter.</div>`;
+
+  el.innerHTML = `
+    <div class="hub-page">
+      <div class="hub-header-row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0;font-size:16px;font-family:monospace;color:#34d399">CULTURAL TIMELINE // YEARLY LINEAGE TREE &amp; SPOTIFY CITY SEEDING</h2>
+          <div style="font-size:11.5px;color:#94a3b8;margin-top:2px">Recurring holiday, weather-mood, and regional anchors with <b>2–5 week pre-wave seeding windows</b> + auto-linked live signals &amp; custom future catalysts.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn-action cyan" id="btn-tl-sync-sports">⚡ Sync Live Sports (ESPN)</button>
+          <button type="button" class="btn-action green" id="btn-tl-add-catalyst">+ Add Future Catalyst</button>
+          <button type="button" class="btn-action" id="btn-tl-refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+        <div class="hub-card" style="padding:10px 12px;border-color:rgba(16,185,129,0.4)"><div style="font-family:monospace;font-size:10px;color:#94a3b8">SEED NOW / PEAK</div><div style="font-size:20px;font-weight:800;color:#34d399">${(s.seed_now_count ?? 0) + (s.peak_now_count ?? 0)}</div><div style="font-size:10.5px;color:#64748b">${s.peak_now_count ?? 0} peaking · ${s.seed_now_count ?? 0} in seed window</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">PREP NEXT (30-60D)</div><div style="font-size:20px;font-weight:800;color:#22d3ee">${s.prep_next_count ?? 0}</div><div style="font-size:10.5px;color:#64748b">Queue client audio &amp; clips</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">CONFIRMED TRUNK</div><div style="font-size:20px;font-weight:800;color:#f8fafc">${s.total_anchors ?? 0}</div><div style="font-size:10.5px;color:#64748b">+ ${s.custom_catalysts ?? 0} custom branches</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">LIVE SIGNAL BRANCHES</div><div style="font-size:20px;font-weight:800;color:#a78bfa">${s.linked_signal_branches ?? 0}</div><div style="font-size:10.5px;color:#64748b">Auto-linked from Terminal t₀</div></div>
+      </div>
+
+      <div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.4)">
+        <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+          <span>🌤 CURRENT SEASONAL MOOD // ${esc((season.label || "").toUpperCase())} (${esc(tl.reference_date || "")})</span>
+          <span class="pill green">SPOTIFY / BILLBOARD PRIORITY CITIES NOW</span>
+        </div>
+        <div class="hub-card-body">
+          <div style="font-size:12px;color:#cbd5e1;margin-bottom:8px">
+            <b>Weather / Atmosphere:</b> ${esc(season.weather_vibe || "")} &nbsp;|&nbsp; <b>Collective Consciousness Mood:</b> ${esc(season.collective_mood || "")}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <span style="font-family:monospace;font-size:10.5px;color:#94a3b8">SEED PRIORITY CITIES:</span>
+            ${cityPillsHtml}
+            ${hubState.timelineCityFilter !== "ALL" ? `<button type="button" class="btn-action" id="btn-tl-clear-city" style="padding:2px 8px;font-size:10.5px">Clear City</button>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="hub-card" style="margin-bottom:14px">
+        <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+          <span>12-MONTH CULTURAL LINEAGE TREE (${filtered.length} / ${allNodes.length} ANCHORS)</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <select id="tl-scope" class="hub-filter-select">
+              <option value="ALL" ${hubState.timelineScopeFilter === "ALL" ? "selected" : ""}>Scope: ALL</option>
+              <option value="national" ${hubState.timelineScopeFilter === "national" ? "selected" : ""}>National / Holidays</option>
+              <option value="sports" ${hubState.timelineScopeFilter === "sports" ? "selected" : ""}>Pro &amp; College Sports</option>
+              <option value="regional" ${hubState.timelineScopeFilter === "regional" ? "selected" : ""}>Regional / Spotify Cities</option>
+              <option value="music_industry" ${hubState.timelineScopeFilter === "music_industry" ? "selected" : ""}>Spotify &amp; Billboard</option>
+              <option value="custom" ${hubState.timelineScopeFilter === "custom" ? "selected" : ""}>Custom Branches</option>
+            </select>
+            <select id="tl-window" class="hub-filter-select">
+              <option value="ALL" ${hubState.timelineWindowFilter === "ALL" ? "selected" : ""}>Window: Full 12 Months</option>
+              <option value="ACTIVE" ${hubState.timelineWindowFilter === "ACTIVE" ? "selected" : ""}>Active Seed / Peak Now</option>
+              <option value="PREP_NEXT" ${hubState.timelineWindowFilter === "PREP_NEXT" ? "selected" : ""}>Prep Next (30-60d)</option>
+            </select>
+            <select id="tl-city" class="hub-filter-select">
+              <option value="ALL" ${hubState.timelineCityFilter === "ALL" ? "selected" : ""}>Spotify City: ALL</option>
+              ${allCities.map((c) => `<option value="${esc(c)}" ${hubState.timelineCityFilter === c ? "selected" : ""}>${esc(c)}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="hub-card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">
+            ${nodesHtml}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("btn-tl-refresh").addEventListener("click", loadTimeline);
+  document.getElementById("btn-tl-add-catalyst").addEventListener("click", openAddCatalystModal);
+  document.getElementById("btn-tl-sync-sports").addEventListener("click", async () => {
+    const btn = document.getElementById("btn-tl-sync-sports");
+    btn.disabled = true;
+    btn.textContent = "Syncing NFL/CFB/NBA/NCAA...";
+    setStatus("Pulling live Pro & College Sports schedules from ESPN...");
+    try {
+      const res = await api("/api/timeline/sync-sports", {
+        method: "POST",
+        body: JSON.stringify({ days_ahead: 21, max_per_league: 4 }),
+      });
+      setStatus(`ESPN Sports Sync complete: added ${res.added_count} upcoming marquee games (${res.skipped_existing} already tracked).`);
+      await loadTimeline();
+    } catch (err) {
+      setStatus(`Sports sync failed: ${err.message}`, true);
+      btn.disabled = false;
+      btn.textContent = "⚡ Sync Live Sports (ESPN)";
+    }
+  });
+  document.getElementById("tl-scope").addEventListener("change", (e) => { hubState.timelineScopeFilter = e.target.value; renderTimelineView(); });
+  document.getElementById("tl-window").addEventListener("change", (e) => { hubState.timelineWindowFilter = e.target.value; renderTimelineView(); });
+  document.getElementById("tl-city").addEventListener("change", (e) => { hubState.timelineCityFilter = e.target.value; renderTimelineView(); });
+  document.getElementById("btn-tl-clear-city")?.addEventListener("click", () => { hubState.timelineCityFilter = "ALL"; renderTimelineView(); });
+
+  el.querySelectorAll("[data-tl-city]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      hubState.timelineCityFilter = hubState.timelineCityFilter === btn.dataset.tlCity ? "ALL" : btn.dataset.tlCity;
+      renderTimelineView();
+    });
+  });
+  el.querySelectorAll("[data-tl-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchHubView("terminal", true);
+      if (typeof selectTicker === "function") selectTicker(btn.dataset.tlJump);
+    });
+  });
+  el.querySelectorAll("[data-tl-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/api/timeline/catalysts/${encodeURIComponent(btn.dataset.tlDel)}/delete`, { method: "POST", body: "{}" });
+        setStatus("Removed custom timeline catalyst.");
+        await loadTimeline();
+      } catch (err) {
+        setStatus(`Delete failed: ${err.message}`, true);
+      }
+    });
+  });
+}
+
+function openAddCatalystModal() {
+  const tl = hubState.timeline || {};
+  const anchors = (tl.timeline_nodes || []).filter((n) => !n.is_custom);
+  const anchorOpts = anchors.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.next_date)})</option>`).join("");
+  const activeProj = typeof getActiveProject === "function" ? getActiveProject() : null;
+
+  openModal(
+    "ADD FUTURE CATALYST // GROW LINEAGE TREE",
+    `
+    <form id="form-add-catalyst">
+      <div class="form-row">
+        <label>CATALYST NAME (ALBUM DROP, TOUR, MOVIE, REGIONAL MOMENT, CLIENT RELEASE)</label>
+        <input type="text" name="name" placeholder="e.g. Fuerza Regida LA Arena Show / GTA VI Trailer 3" required autofocus />
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-row">
+          <label>EVENT DATE</label>
+          <input type="date" name="event_date" required />
+        </div>
+        <div class="form-row">
+          <label>SEED LEAD DAYS</label>
+          <input type="number" name="seed_lead_days" value="21" min="1" max="90" />
+        </div>
+        <div class="form-row">
+          <label>SCOPE</label>
+          <select name="scope">
+            <option value="custom">Custom / Client Drop</option>
+            <option value="regional">Regional / City Event</option>
+            <option value="music_industry">Spotify / Billboard</option>
+            <option value="national">National Pop Culture</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>BRANCH OFF RECURRING ANCHOR (OPTIONAL — FAMILY TREE PARENT)</label>
+        <select name="parent_anchor_id">
+          <option value="">Standalone Future Node (Top-Level)</option>
+          ${anchorOpts}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>PRIORITY SPOTIFY / BILLBOARD CITIES (COMMA-SEPARATED)</label>
+        <input type="text" name="target_cities" placeholder="Los Angeles, Houston, Dallas-Fort Worth, Miami" value="${activeProj ? "Los Angeles, Houston, Dallas-Fort Worth, Phoenix" : "Los Angeles, New York City, Atlanta"}" />
+      </div>
+      <div class="form-row">
+        <label>VIBE / TREND TAGS (COMMA-SEPARATED)</label>
+        <input type="text" name="vibe_tags" placeholder="party, hype, desamor, car, capcut_template" />
+      </div>
+      <div class="form-row">
+        <label>SEEDING ANGLE / NOTES</label>
+        <textarea name="notes" rows="2" placeholder="Why this matters and how we seed client songs 2-4 weeks ahead..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-action green">Save to Timeline Tree</button>
+      </div>
+    </form>
+    `
+  );
+  document.getElementById("form-add-catalyst").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api("/api/timeline/catalysts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: fd.get("name"),
+          event_date: fd.get("event_date"),
+          seed_lead_days: Number(fd.get("seed_lead_days") || 21),
+          scope: fd.get("scope"),
+          parent_anchor_id: fd.get("parent_anchor_id") || "",
+          target_cities: fd.get("target_cities") || "",
+          vibe_tags: fd.get("vibe_tags") || "",
+          notes: fd.get("notes") || "",
+          project_id: activeProj ? activeProj.id : "",
+        }),
+      });
+      closeModal();
+      setStatus("Added future catalyst branch to Cultural Timeline.");
+      await loadTimeline();
+    } catch (err) {
+      setStatus(`Failed to save catalyst: ${err.message}`, true);
+    }
   });
 }
 
@@ -1261,7 +1668,7 @@ document.getElementById("btn-auth-lock")?.addEventListener("click", () => openUn
 
 window.addEventListener("hashchange", () => {
   const h = window.location.hash.replace("#", "").toLowerCase();
-  if (["evals", "terminal", "quant", "orchestration", "updates"].includes(h) && h !== hubState.activeView) {
+  if (["evals", "terminal", "quant", "timeline", "orchestration", "updates"].includes(h) && h !== hubState.activeView) {
     switchHubView(h, false);
   }
 });
@@ -1269,6 +1676,6 @@ window.addEventListener("hashchange", () => {
 // Initialize auth status & deep-link view from hash
 refreshAuthStatus();
 const initialHash = window.location.hash.replace("#", "").toLowerCase();
-if (["evals", "terminal", "quant", "orchestration", "updates"].includes(initialHash)) {
+if (["evals", "terminal", "quant", "timeline", "orchestration", "updates"].includes(initialHash)) {
   switchHubView(initialHash, false);
 }

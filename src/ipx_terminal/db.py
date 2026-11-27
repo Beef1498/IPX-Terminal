@@ -153,6 +153,24 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 
 CREATE INDEX IF NOT EXISTS idx_eval_runs_created ON eval_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_eval_runs_model ON eval_runs(model_name, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS timeline_catalysts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'custom',
+    parent_anchor_id TEXT NOT NULL DEFAULT '',
+    seed_lead_days INTEGER NOT NULL DEFAULT 21,
+    target_cities_json TEXT NOT NULL DEFAULT '[]',
+    vibe_tags_json TEXT NOT NULL DEFAULT '[]',
+    first_mover_cohort TEXT NOT NULL DEFAULT '',
+    project_id TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_catalysts_date ON timeline_catalysts(event_date ASC);
 """
 
 
@@ -1217,5 +1235,91 @@ class TerminalDB:
             "source": row["source"],
             "notes": row["notes"],
             "started_at": row["started_at"],
+            "created_at": row["created_at"],
+        }
+
+    # ------------------------------------------------------------------
+    # Cultural Timeline Custom Catalysts (Real-Time Lineage Branches)
+    # ------------------------------------------------------------------
+    def create_timeline_catalyst(
+        self,
+        name: str,
+        event_date: str,
+        scope: str = "custom",
+        parent_anchor_id: str = "",
+        seed_lead_days: int = 21,
+        target_cities: Optional[Sequence[str]] = None,
+        vibe_tags: Optional[Sequence[str]] = None,
+        first_mover_cohort: str = "",
+        project_id: str = "",
+        notes: str = "",
+        source: str = "manual",
+    ) -> Dict[str, Any]:
+        clean_name = name.strip()
+        clean_date = event_date.strip()[:10]
+        if not clean_name:
+            raise ValueError("Catalyst name cannot be empty")
+        if len(clean_date) != 10:
+            raise ValueError("event_date must be YYYY-MM-DD")
+        now = utc_now_iso()
+        cities_list = [str(c).strip() for c in (target_cities or []) if str(c).strip()]
+        vibes_list = [str(v).strip().lower() for v in (vibe_tags or []) if str(v).strip()]
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO timeline_catalysts (
+                    name, event_date, scope, parent_anchor_id, seed_lead_days,
+                    target_cities_json, vibe_tags_json, first_mover_cohort,
+                    project_id, notes, source, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    clean_name,
+                    clean_date,
+                    (scope or "custom").strip().lower(),
+                    (parent_anchor_id or "").strip(),
+                    max(1, min(90, int(seed_lead_days))),
+                    json.dumps(cities_list),
+                    json.dumps(vibes_list),
+                    (first_mover_cohort or "").strip(),
+                    (project_id or "").strip(),
+                    (notes or "").strip(),
+                    (source or "manual").strip(),
+                    now,
+                ),
+            )
+            cat_id = int(cur.lastrowid)
+            row = conn.execute("SELECT * FROM timeline_catalysts WHERE id = ?", (cat_id,)).fetchone()
+        return self._decode_timeline_catalyst(row)  # type: ignore[arg-type]
+
+    def list_timeline_catalysts(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM timeline_catalysts ORDER BY event_date ASC, id DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        return [self._decode_timeline_catalyst(r) for r in rows]
+
+    def delete_timeline_catalyst(self, catalyst_id: int) -> bool:
+        with self.connect() as conn:
+            cur = conn.execute("DELETE FROM timeline_catalysts WHERE id = ?", (int(catalyst_id),))
+        return cur.rowcount > 0
+
+    @staticmethod
+    def _decode_timeline_catalyst(row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "event_date": row["event_date"],
+            "scope": row["scope"],
+            "parent_anchor_id": row["parent_anchor_id"],
+            "seed_lead_days": row["seed_lead_days"],
+            "target_cities": json.loads(row["target_cities_json"] or "[]"),
+            "vibe_tags": json.loads(row["vibe_tags_json"] or "[]"),
+            "first_mover_cohort": row["first_mover_cohort"],
+            "project_id": row["project_id"],
+            "notes": row["notes"],
+            "source": row["source"],
             "created_at": row["created_at"],
         }

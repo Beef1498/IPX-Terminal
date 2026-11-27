@@ -230,6 +230,7 @@ def generate_creative_brief(
     model: Optional[str] = None,
     timeout: int = 45,
     project: Optional[Dict[str, Any]] = None,
+    timeline_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generate a native, anti-slop Creative Brief from a t_0 signal (falls back to draft template if no key)."""
     creds = resolve_ai_credentials(api_key=api_key, base_url=base_url, model=model)
@@ -292,6 +293,19 @@ def generate_creative_brief(
         "'edit_beats' (list of 3-4 concise timed beat strings including exact beat-drop/chorus hit), and "
         "'audio_cue' (string: exact song placement, beat-drop timing, and why viewers will click 'Use This Sound')."
     )
+    timeline_block = ""
+    if timeline_context:
+        season = timeline_context.get("current_season") or {}
+        waves = timeline_context.get("seed_now_waves") or []
+        cities = timeline_context.get("priority_spotify_cities_now") or []
+        timeline_block = (
+            f"\nActive Cultural Seeding Window ({timeline_context.get('reference_date', '')}):\n"
+            f"- Seasonal Mood / Weather: {season.get('label', '')} ({season.get('collective_mood', '')})\n"
+            f"- Priority Spotify/Billboard Cities Now: {', '.join(cities)}\n"
+            f"- Upcoming Pre-Wave Anchors: {json.dumps(waves[:3], ensure_ascii=False)}\n"
+            "If relevant, tie the video angle/hook subtly into the active seasonal mood or upcoming holiday/event wave.\n"
+        )
+
     user_prompt = (
         f"Target Platform: {target_platform}\n"
         f"IP Ticker: {signal['ticker']} ({signal['sector']})\n"
@@ -299,6 +313,7 @@ def generate_creative_brief(
         f"t_0 Summary: {signal['summary']}\n"
         f"Verbatim Samples: {json.dumps(signal.get('samples', []), ensure_ascii=False)}\n"
         f"Metrics: {json.dumps(signal.get('metrics', {}), ensure_ascii=False)}\n"
+        f"{timeline_block}"
         f"{project_block}\n"
         "Create a sharp, native creative brief that could realistically break out on this platform."
     )
