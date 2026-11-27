@@ -50,7 +50,7 @@ When transitioning ownership or onboarding teammates across Product, Creative, E
 | **Creative / Content Team** | Review auto-drafted Morning Video Briefs, shoot/post, log 48h real-world verdicts (`winner`/`flop`) | [Live Terminal → BRIEF](https://ipx-command-center-production.up.railway.app/#terminal) |
 | **Quant / Strategy** | Monitor Multi-Factor Screener, Odds-vs-Social divergences, Brier calibration, and 8-Gate VCRM | [Quant Desk](https://ipx-command-center-production.up.railway.app/#quant) · [QUANT_PLAYBOOK.md](https://github.com/Beef1498/IPX-Terminal/blob/main/QUANT_PLAYBOOK.md) |
 | **CTO / Engineering** | Railway hosting (`ipx-command-center`), GitHub auto-deploy (`main`), API keys (`GEMINI_API_KEY`, `SCRAPECREATORS_API_KEY`, `IPX_WRITE_TOKEN`), unit test suite (`14/14` passing) | [DEPLOY.md](https://github.com/Beef1498/IPX-Terminal/blob/main/DEPLOY.md) · [Dockerfile](https://github.com/Beef1498/IPX-Terminal/blob/main/Dockerfile) · [src/ipx_terminal/](https://github.com/Beef1498/IPX-Terminal/tree/main/src/ipx_terminal) |
-| **ML / DGX Spark Team** | Pull weekly DPO/GRPO exports (`IPX-Eval/exports/dgx-training/`), run `ipx-eval` benchmarks, POST run metrics to `/api/evals/runs`, enforce Promotion Gate (`ipx-eval gate`) | [IPX-eval Repo](https://github.com/Beef1498/IPX-eval) · [1 EVALS](https://ipx-command-center-production.up.railway.app/#evals) |
+| **ML / DGX Spark Team** | Pull weekly DPO/GRPO exports (`IPX-Eval/exports/dgx-training/`), run Gemma 4 `26B-A4B` MoE `SFT → DPO → GRPO` training (`train_gemma4_dgx.py`), auto-POST metrics to `/api/evals/runs`, and enforce Promotion Gate (`ipx-eval gate`) | [DGX_GEMMA4_RUNBOOK.md](https://github.com/Beef1498/IPX-eval/blob/main/scripts/DGX_GEMMA4_RUNBOOK.md) · [1 EVALS](https://ipx-command-center-production.up.railway.app/#evals) |
 
 **Deployment & Governance Rules:**
 - **Zero-downtime deploys:** Every push to `main` on `IPX-Terminal` automatically builds and deploys to Railway via `Dockerfile`.
@@ -71,9 +71,12 @@ For anyone who wants to inspect the underlying mechanics, scoring math, and infr
    - Separates **Verification** (*built right*: zero future timestamp leakage, independent eval score ≥ 75%, AI audit trail) from **Validation** (*built the right thing*: 0 overdue 48–72h rechecks, Brier calibration ≥ 70%, live market grounding, graded real-world creative outcomes).
 4. **Deterministic Auto-Resolution & Zero Leakage ([quant_agent.py](https://github.com/Beef1498/IPX-Terminal/blob/main/src/ipx_terminal/quant_agent.py), [exporter.py](https://github.com/Beef1498/IPX-Terminal/blob/main/src/ipx_terminal/exporter.py)):**
    - Clear-cut 48–72h metric deltas (`views_ratio >= 2.0x` or `+250k` views → `breakout`; `<= 1.15x` and `< 25k` → `noise`) resolve deterministically and auto-export to `IPX-Eval` JSONL; ambiguous cases stay pending for human review.
-5. **Key Reference Docs (Clickable on GitHub):**
+5. **DGX Spark Open-Model Fine-Tuning ([train_gemma4_dgx.py](https://github.com/Beef1498/IPX-eval/blob/main/scripts/train_gemma4_dgx.py), [DGX_GEMMA4_RUNBOOK.md](https://github.com/Beef1498/IPX-eval/blob/main/scripts/DGX_GEMMA4_RUNBOOK.md)):**
+   - Built on Google's official `gemma-trainer` recipes for **`google/gemma-4-26B-A4B-it`** (MoE) in `bfloat16` on DGX Spark: targets attention/MLP + MoE expert tensors (`experts.gate_up_proj`, `experts.down_proj`) while freezing the router and multimodal towers, runs `SFT → DPO` (128 train / 31 val blind A/B pairs) `→ GRPO` (174 train / 40 val cases with deterministic JSON + label + concept-recall rewards), logs Epoch 0 baseline loss (`eval_on_start=True`), and auto-POSTs run metrics to **`1 EVALS`**.
+6. **Key Reference Docs (Clickable on GitHub):**
    - [QUANT_PLAYBOOK.md](https://github.com/Beef1498/IPX-Terminal/blob/main/QUANT_PLAYBOOK.md) — Daily Quant SOP & factor definitions
    - [TERMINAL_GUIDE.md](https://github.com/Beef1498/IPX-Terminal/blob/main/TERMINAL_GUIDE.md) — Full Command Center & ticker guide
    - [DEPLOY.md](https://github.com/Beef1498/IPX-Terminal/blob/main/DEPLOY.md) — Railway/Render deployment & webhook reference
    - [requirements_vcrm.json](https://github.com/Beef1498/IPX-Terminal/blob/main/data/requirements_vcrm.json) — Live 8-gate requirements spec
+   - [DGX_GEMMA4_RUNBOOK.md](https://github.com/Beef1498/IPX-eval/blob/main/scripts/DGX_GEMMA4_RUNBOOK.md) — Step-by-step DGX Spark Gemma 4 fine-tuning & vLLM serving guide
    - [IPX-eval Repository](https://github.com/Beef1498/IPX-eval) — Benchmark runner, 143-pair creative dataset, and DGX Spark DPO/GRPO exports
