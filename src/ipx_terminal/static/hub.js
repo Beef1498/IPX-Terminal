@@ -248,12 +248,51 @@ function renderQuantView() {
           <div style="font-size:11.5px;color:#94a3b8;margin-top:2px">Ranks Content IP by <b>Derivative/Geo Breadth</b>, <b>Share-to-Like %</b>, <b>Breakout Ratio</b>, and <b>CVS Momentum</b>—plus Market-vs-Social divergence &amp; Brier calibration.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <a class="btn-action green" href="/api/quant/export.csv" download="ipx_quant_factors.csv" style="text-decoration:none">⬇ Export Factors CSV</a>
-          <button type="button" class="btn-action cyan" id="btn-quant-open-mkts">Open MKTS</button>
-          <button type="button" class="btn-action amber" id="btn-quant-open-map">Open US MAP</button>
+          <button type="button" class="btn-action" id="btn-run-quant-morning" style="border-color:#fb7185;color:#fb7185">⚡ Run Gemini Quant (Pro)</button>
+          <button type="button" class="btn-action cyan" id="btn-run-quant-intraday">⚡ Intraday Scout (Flash-Lite)</button>
+          <a class="btn-action green" href="/api/quant/export.csv" download="ipx_quant_factors.csv" style="text-decoration:none">⬇ Export CSV</a>
+          <button type="button" class="btn-action" id="btn-quant-open-mkts">MKTS</button>
+          <button type="button" class="btn-action amber" id="btn-quant-open-map">US MAP</button>
           <button type="button" class="btn-action" id="btn-refresh-quant">Refresh</button>
         </div>
       </div>
+
+      ${(() => {
+        const m = q.latest_memo;
+        if (!m) {
+          return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(251,113,133,0.35)">
+            <div class="hub-card-header"><span>GEMINI AI QUANT // DAILY DESK MEMO</span><span class="pill amber">READY TO RUN</span></div>
+            <div class="hub-card-body" style="font-size:12px;color:#94a3b8">No Gemini Quant memo logged yet. Click <b>⚡ Run Gemini Quant (Pro)</b> or <b>⚡ Intraday Scout (Flash-Lite)</b> above (or run <code>python3 -m ipx_terminal quant-run</code>) to execute your daily Quant routine automatically.</div>
+          </div>`;
+        }
+        const sigList = (m.top_signals || [])
+          .map((x) => `<div style="margin-top:4px;font-size:12px"><b style="color:#e2e8f0;font-family:monospace">${esc(x.ticker || "")}</b> <span class="pill">${esc(x.signal_flag || "WATCH")}</span> — <span style="color:#cbd5e1">${esc(x.thesis || "")}</span></div>`)
+          .join("");
+        const acts = (m.actions_taken || [])
+          .map((a) => `<li style="color:#34d399;font-size:11.5px;margin:2px 0">${esc(a)}</li>`)
+          .join("");
+        const vActs = (m.vcrm_actions || [])
+          .map((a) => `<li style="color:#f59e0b;font-size:11.5px;margin:2px 0">${esc(a)}</li>`)
+          .join("");
+        return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(251,113,133,0.45)">
+          <div class="hub-card-header" style="flex-wrap:wrap;gap:6px">
+            <span>GEMINI AI QUANT MEMO // ${esc((m.mode || "morning").toUpperCase())}</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span class="pill cyan">${esc(m.model_used || "gemini")}</span>
+              <span class="pill">${esc(fmtTime(m.created_at))}</span>
+            </div>
+          </div>
+          <div class="hub-card-body">
+            <div style="font-weight:700;font-size:13.5px;color:#f8fafc;margin-bottom:6px">${esc(m.headline || "")}</div>
+            <p style="margin:0 0 10px;font-size:12.5px;color:#cbd5e1;line-height:1.45">${esc(m.executive_summary || "")}</p>
+            ${sigList ? `<div style="margin-bottom:10px">${sigList}</div>` : ""}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+              ${acts ? `<div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8;margin-bottom:4px">AUTONOMOUS ACTIONS EXECUTED</div><ul style="margin:0;padding-left:16px">${acts}</ul></div>` : ""}
+              ${vActs ? `<div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8;margin-bottom:4px">VCRM GATE ACTION ITEMS</div><ul style="margin:0;padding-left:16px">${vActs}</ul></div>` : ""}
+            </div>
+          </div>
+        </div>`;
+      })()}
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
         <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">STRONG SIGNALS</div><div style="font-size:20px;font-weight:800;color:#34d399">${s.strong_signals ?? 0}</div><div style="font-size:10.5px;color:#64748b">${s.watch_signals ?? 0} on watch · ${s.tracked_tickers ?? 0} tracked</div></div>
@@ -374,6 +413,24 @@ function renderQuantView() {
   `;
 
   document.getElementById("btn-refresh-quant").addEventListener("click", loadQuant);
+  const triggerQuantRun = async (mode, btnId) => {
+    const btn = document.getElementById(btnId);
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = mode === "morning" ? "Running Pro Quant..." : "Running Flash-Lite...";
+    setStatus(`Running Gemini Quant (${mode})...`);
+    try {
+      const res = await api("/api/quant/run", { method: "POST", body: JSON.stringify({ mode }) });
+      setStatus(`Gemini Quant (${res.memo.model_used}) complete: ${res.memo.headline}`);
+      await loadQuant();
+    } catch (err) {
+      setStatus(`Gemini Quant failed: ${err.message}`, true);
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  };
+  document.getElementById("btn-run-quant-morning").addEventListener("click", () => triggerQuantRun("morning", "btn-run-quant-morning"));
+  document.getElementById("btn-run-quant-intraday").addEventListener("click", () => triggerQuantRun("intraday", "btn-run-quant-intraday"));
   document.getElementById("btn-quant-open-mkts").addEventListener("click", () => {
     switchHubView("terminal", true);
     state.activeTab = "MKTS";

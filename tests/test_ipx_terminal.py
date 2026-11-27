@@ -563,6 +563,62 @@ class TestIPXTerminal(unittest.TestCase):
         req1 = next(g for g in vcrm["gates"] if g["id"] == "IPX-REQ-001")
         self.assertEqual(req1["status"], "PASS")
 
+    def test_gemini_quant_agent_logs_calls_and_writes_memo(self) -> None:
+        from ipx_terminal.quant_agent import list_quant_memos, run_gemini_quant
+
+        self.db.upsert_entity(ticker="IPX.AIQ", name="AI Quant Test IP", sector="POP")
+        sig = self.db.insert_signal(
+            ticker="IPX.AIQ",
+            source_type="manual_url",
+            title="Remix breakout clip",
+            summary="Rapid remix velocity",
+            platforms=["TikTok", "Instagram Reels"],
+            metrics={"views": 900_000, "likes": 30_000, "shares": 12_000, "unique_creators_using_sound": 25},
+        )
+
+        def _fake_llm(_sys: str, _usr: str, _model: str):
+            return {
+                "headline": "IPX.AIQ crosses 40% share-to-like threshold",
+                "executive_summary": "Strong remix adoption warrants a 48h breakout call.",
+                "top_signals": [{"ticker": "IPX.AIQ", "signal_flag": "STRONG_SIGNAL", "thesis": "40% share/like + 25 creators"}],
+                "markets_to_freeze": [
+                    {
+                        "market_title": "Will IPX.AIQ hit top 10?",
+                        "ticker": "IPX.AIQ",
+                        "sector": "POP",
+                        "yes_pct": 34.0,
+                        "source": "Polymarket",
+                        "url": "https://polymarket.com/event/test",
+                        "rationale": "Social velocity ahead of 34% market odds",
+                    }
+                ],
+                "calls_to_log": [
+                    {
+                        "signal_id": sig["id"],
+                        "category": "breakout",
+                        "predicted_label": "breakout",
+                        "confidence": 0.78,
+                        "thesis": "Cross-platform remix acceleration.",
+                    }
+                ],
+                "vcrm_actions": ["Clear overdue calls"],
+            }
+
+        memos_dir = Path(self._tmp.name) / "quant_memos"
+        memo = run_gemini_quant(
+            db=self.db,
+            mode="morning",
+            fetch_live=False,
+            memos_dir=memos_dir,
+            llm_caller=_fake_llm,
+        )
+        self.assertEqual(len(memo["frozen_signals"]), 1)
+        self.assertEqual(len(memo["logged_predictions"]), 1)
+        self.assertEqual(memo["logged_predictions"][0]["predicted_label"], "breakout")
+        saved = list_quant_memos(memos_dir=memos_dir)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["headline"], "IPX.AIQ crosses 40% share-to-like threshold")
+
 
 if __name__ == "__main__":
     unittest.main()

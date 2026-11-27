@@ -1,0 +1,63 @@
+{
+  "id": "qmemo-20261127T045008Z",
+  "created_at": "2026-11-27T04:50:08Z",
+  "mode": "morning",
+  "model_used": "gemini-3.5-flash-lite",
+  "dry_run": false,
+  "headline": "KATT.FMT Leads Morning Desk on 44.9% Share-to-Like Ratio; VCRM Gate Enforcement Required",
+  "executive_summary": "IPX Terminal morning snapshot shows KATT.FMT dominating the CREATORS sector with a 44.9% share-to-like ratio, signaling strong derivative remix velocity. Desk focus shifts immediately to clearing 2 overdue 48-72h recheck disciplines to resolve VCRM gate IPX-REQ-002. Prediction market grounding is initiated via Polymarket's Jensen Huang resignation contract to satisfy IPX-REQ-005.",
+  "top_signals": [
+    {
+      "ticker": "KATT.FMT",
+      "signal_flag": "STRONG_SIGNAL",
+      "thesis": "Katt Williams Cutout CapCut Format exhibits an exceptional 44.9% share-to-like ratio in echo chamber, indicating high organic remix potential across creator verticals."
+    },
+    {
+      "ticker": "LEAF.NHL",
+      "signal_flag": "NOISE",
+      "thesis": "Toronto Maple Leafs Shorts hit 4.8x breakout ratio with Kalshi sponsorship, but broader contagion remains localized within sports commentary bubbles."
+    },
+    {
+      "ticker": "SONY.RMG",
+      "signal_flag": "NOISE",
+      "thesis": "Sony Music Publishing closes multi-billion dollar RMG acquisition, registering at mainstream breakout stage with zero near-term velocity anomalies."
+    },
+    {
+      "ticker": "JUSTUS.R",
+      "signal_flag": "NOISE",
+      "thesis": "Justus Reid's 'Rebuilding my House' series logs 0.21x subscriber breakout ratio in echo chamber, failing to cross the threshold for primary desk action."
+    }
+  ],
+  "vcrm_actions": [
+    "Immediately execute 48-72h rechecks on the 2 overdue calls to clear VCRM Gate IPX-REQ-002.",
+    "Freeze Polymarket Jensen Huang contract data to clear pending VCRM Gate IPX-REQ-005 (Prediction Market Grounding).",
+    "Sync completed independent evaluation run data to satisfy VCRM Gate IPX-REQ-006.",
+    "Log at least 2 graded creative briefs to fulfill VCRM Gate IPX-REQ-007."
+  ],
+  "actions_taken": [
+    "Auto-rechecked 1 overdue 48-72h call(s) via live metrics.",
+    "Froze market t_0 signal #14 (NVDA.IP) at 5.1% YES.",
+    "Logged t_0 call ipx-breakout-404 on KATT.FMT: breakout (82% conf)."
+  ],
+  "frozen_signals": [
+    {
+      "signal_id": 14,
+      "ticker": "NVDA.IP",
+      "title": "[Polymarket] Jensen Huang announced resignation or removal again by December 31, 2026?"
+    }
+  ],
+  "logged_predictions": [
+    {
+      "id": 9,
+      "case_code": "ipx-breakout-404",
+      "ticker": "KATT.FMT",
+      "category": "breakout",
+      "predicted_label": "breakout",
+      "confidence": 0.82
+    }
+  ],
+  "recheck_summary": {
+    "overdue_count": 2,
+    "checked_count": 1
+  }
+}

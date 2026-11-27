@@ -145,6 +145,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Auto-recheck live ScrapeCreators metrics for all overdue 48-72h pending predictions.",
     )
 
+    p_qr = sub.add_parser(
+        "quant-run",
+        help="Run the autonomous Gemini Quant routine (morning=Pro, intraday=Flash-Lite) and save a Daily Quant Memo.",
+    )
+    p_qr.add_argument("--mode", default="morning", choices=("morning", "intraday"))
+    p_qr.add_argument("--model", default=None, help="Override Gemini model (default: gemini-2.5-pro / gemini-3.5-flash-lite).")
+    p_qr.add_argument("--max-calls", type=int, default=2, help="Max t_0 calls to log per run (default: 2).")
+    p_qr.add_argument("--dry-run", action="store_true", help="Generate memo without writing new signals/calls to SQLite.")
+
     p_ai = sub.add_parser("ask-ai", help="Run live AI t_0 scoring against a captured signal (Gemini / DGX Spark).")
     p_ai.add_argument("--signal-id", type=int, required=True)
     p_ai.add_argument("--category", required=True, choices=VALID_CATEGORIES)
@@ -418,6 +427,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"  - {item['case_code']} [{item['ticker']}] provider={item['provider']} deltas={item['deltas']}")
         for err in res["errors"]:
             print(f"  ! {err}")
+        return 0
+
+    if args.command == "quant-run":
+        from ipx_terminal.quant_agent import run_gemini_quant
+
+        memo = run_gemini_quant(
+            db=db,
+            mode=args.mode,
+            model=args.model,
+            dry_run=args.dry_run,
+            max_calls=args.max_calls,
+        )
+        print(f"Gemini Quant [{memo['mode'].upper()}] ({memo['model_used']}) — {memo['headline']}")
+        print(memo["executive_summary"])
+        for act in memo.get("actions_taken") or []:
+            print(f"  + {act}")
+        print(f"Memo saved -> {memo.get('memo_path', '')}")
         return 0
 
     if args.command == "serve":

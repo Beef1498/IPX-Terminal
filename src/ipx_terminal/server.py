@@ -252,7 +252,24 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     return
 
                 if path == "/api/quant":
-                    self._send_json({"ok": True, **build_quant_workspace(db)})
+                    from ipx_terminal.quant_agent import list_quant_memos
+
+                    memos = list_quant_memos(limit=5)
+                    self._send_json(
+                        {
+                            "ok": True,
+                            **build_quant_workspace(db),
+                            "latest_memo": memos[0] if memos else None,
+                            "memos_count": len(memos),
+                        }
+                    )
+                    return
+
+                if path == "/api/quant/memos":
+                    from ipx_terminal.quant_agent import list_quant_memos
+
+                    lim = int(qs.get("limit", ["12"])[0])
+                    self._send_json({"ok": True, "memos": list_quant_memos(limit=lim)})
                     return
 
                 if path == "/api/vcrm":
@@ -633,6 +650,19 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         version=str(body.get("version", "0.5")),
                     )
                     self._send_json({"ok": True, **result})
+                    return
+
+                if path == "/api/quant/run":
+                    from ipx_terminal.quant_agent import run_gemini_quant
+
+                    memo = run_gemini_quant(
+                        db=db,
+                        mode=str(body.get("mode", "morning")),
+                        model=body.get("model") or None,
+                        dry_run=bool(body.get("dry_run", False)),
+                        max_calls=int(body.get("max_calls", 2)),
+                    )
+                    self._send_json({"ok": True, "memo": memo}, status=HTTPStatus.CREATED)
                     return
 
                 self._send_json({"error": f"Unknown endpoint: {path}"}, status=HTTPStatus.NOT_FOUND)
