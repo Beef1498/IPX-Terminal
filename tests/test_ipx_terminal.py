@@ -526,6 +526,38 @@ class TestIPXTerminal(unittest.TestCase):
             self.assertEqual(evals["summary"]["best_model"], "ipx-qwen3-32b-sft")
             self.assertEqual(evals["summary"]["leaderboard"][0]["overall_score"], 81.4)
 
+    def test_quant_workspace_and_csv_export(self) -> None:
+        from ipx_terminal.quant import build_quant_workspace, export_quant_factors_csv
+
+        self.db.upsert_entity(ticker="IPX.QNT", name="Quant Signal IP", sector="POP")
+        self.db.insert_signal(
+            ticker="IPX.QNT",
+            source_type="manual_url",
+            title="Explosive remix audio",
+            summary="Rapid cross-platform remix adoption",
+            platforms=["TikTok", "Instagram Reels"],
+            url="https://example.com/qnt",
+            metrics={
+                "views": 1_200_000,
+                "likes": 40_000,
+                "shares": 18_000,
+                "creator_followers": 60_000,
+                "unique_creators_using_sound": 32,
+            },
+        )
+        ws = build_quant_workspace(self.db)
+        self.assertGreaterEqual(ws["summary"]["strong_signals"], 1)
+        row = ws["screener"][0]
+        self.assertEqual(row["ticker"], "IPX.QNT")
+        self.assertEqual(row["signal_flag"], "STRONG_SIGNAL")
+        self.assertEqual(row["share_to_like_pct"], 45.0)
+        self.assertEqual(row["breakout_ratio"], 20.0)
+        self.assertEqual(row["remix_breadth"], 32)
+
+        csv_text = export_quant_factors_csv(self.db)
+        self.assertIn("ticker,name,sector,signal_flag,alpha_score", csv_text)
+        self.assertIn("IPX.QNT", csv_text)
+
 
 if __name__ == "__main__":
     unittest.main()

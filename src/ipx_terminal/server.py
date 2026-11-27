@@ -38,6 +38,7 @@ from ipx_terminal.ai_scorer import (
 )
 from ipx_terminal.db import TerminalDB, normalize_ticker
 from ipx_terminal.exporter import export_creative_feedback, export_resolved_to_jsonl, parse_concepts_text
+from ipx_terminal.quant import build_quant_workspace, export_quant_factors_csv
 from ipx_terminal.ingest import (
     auto_pair_creator_ab,
     fetch_prediction_markets,
@@ -248,6 +249,20 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     hide_noise = qs.get("hide_noise", ["1"])[0].lower() not in ("0", "false", "no")
                     data = fetch_us_contagion_map(query=q_text, force_refresh=force, hide_noise=hide_noise)
                     self._send_json({"ok": True, **data})
+                    return
+
+                if path == "/api/quant":
+                    self._send_json({"ok": True, **build_quant_workspace(db)})
+                    return
+
+                if path == "/api/quant/export.csv":
+                    csv_body = export_quant_factors_csv(db).encode("utf-8")
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "text/csv; charset=utf-8")
+                    self.send_header("Content-Disposition", 'attachment; filename="ipx_quant_factors.csv"')
+                    self.send_header("Content-Length", str(len(csv_body)))
+                    self.end_headers()
+                    self.wfile.write(csv_body)
                     return
 
                 if path.startswith("/api/ticker/"):

@@ -557,6 +557,7 @@ body {
 }
 .hub-tab.tab-evals { --tab-accent: var(--cyan); }
 .hub-tab.tab-terminal { --tab-accent: var(--amber); }
+.hub-tab.tab-quant { --tab-accent: #fb7185; }
 .hub-tab.tab-orchestration { --tab-accent: var(--violet); }
 .hub-tab.tab-updates { --tab-accent: var(--green); }
 .hub-tab:hover {

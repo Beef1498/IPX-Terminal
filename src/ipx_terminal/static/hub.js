@@ -7,6 +7,12 @@ const hubState = {
   evalMetric: "score", // "score" | "loss"
   evalModelFilter: "ALL",
   evalDatasetFilter: "ALL",
+  quant: null,
+  quantSectorFilter: "ALL",
+  quantFlagFilter: "ALL",
+  quantMinShare: 0,
+  quantMinBreakout: 0,
+  quantSortBy: "alpha_score",
   orchestration: null,
   selectedHardwareId: null,
   updates: null,
@@ -124,9 +130,9 @@ function openUnlockModal(reason = "") {
 }
 window.openUnlockModal = openUnlockModal;
 
-/* ---------------- Top-Level 4-Tab Switching ---------------- */
+/* ---------------- Top-Level 5-Tab Switching ---------------- */
 async function switchHubView(view, updateHash = true) {
-  const valid = ["evals", "terminal", "orchestration", "updates"];
+  const valid = ["evals", "terminal", "quant", "orchestration", "updates"];
   const target = valid.includes(view) ? view : "terminal";
   hubState.activeView = target;
 
@@ -143,11 +149,206 @@ async function switchHubView(view, updateHash = true) {
 
   if (target === "evals") {
     await loadEvals();
+  } else if (target === "quant") {
+    await loadQuant();
   } else if (target === "orchestration") {
     await loadOrchestration();
   } else if (target === "updates") {
     await loadUpdates(false);
   }
+}
+
+/* ---------------- TAB 3: QUANT DESK ---------------- */
+async function loadQuant() {
+  const el = document.getElementById("view-quant");
+  if (!hubState.quant) {
+    el.innerHTML = `<div class="hub-page"><p style="color:#8b9bb0">Loading Quant Desk factor screener &amp; calibration scorecard...</p></div>`;
+  }
+  try {
+    hubState.quant = await api("/api/quant");
+    renderQuantView();
+  } catch (err) {
+    el.innerHTML = `<div class="hub-page"><p style="color:#fb7185">Failed to load Quant Desk: ${esc(err.message)}</p></div>`;
+  }
+}
+
+function renderQuantView() {
+  const el = document.getElementById("view-quant");
+  const q = hubState.quant;
+  if (!el || !q) return;
+
+  const s = q.summary || {};
+  const allRows = q.screener || [];
+  const filtered = allRows
+    .filter((r) => hubState.quantSectorFilter === "ALL" || r.sector === hubState.quantSectorFilter)
+    .filter((r) => hubState.quantFlagFilter === "ALL" || r.signal_flag === hubState.quantFlagFilter)
+    .filter((r) => Number(r.share_to_like_pct || 0) >= Number(hubState.quantMinShare || 0))
+    .filter((r) => Number(r.breakout_ratio || 0) >= Number(hubState.quantMinBreakout || 0))
+    .sort((a, b) => Number(b[hubState.quantSortBy] || 0) - Number(a[hubState.quantSortBy] || 0));
+
+  const flagPill = (f) => {
+    if (f === "STRONG_SIGNAL") return `<span class="pill" style="background:rgba(52,211,153,0.16);color:#34d399;border-color:#34d399">STRONG</span>`;
+    if (f === "WATCH") return `<span class="pill" style="background:rgba(245,158,11,0.16);color:#f59e0b;border-color:#f59e0b">WATCH</span>`;
+    return `<span class="pill" style="color:#64748b">NOISE</span>`;
+  };
+
+  const rowsHtml = filtered.length
+    ? filtered
+        .map(
+          (r) => `
+          <tr>
+            <td>
+              <button type="button" class="btn-action" data-quant-jump="${esc(r.ticker)}" style="padding:2px 6px;font-family:monospace;color:#38bdf8">${esc(r.ticker)}</button>
+            </td>
+            <td><span class="pill">${esc(r.sector)}</span></td>
+            <td>${flagPill(r.signal_flag)}</td>
+            <td class="num" style="font-weight:700;color:#fb7185">${r.alpha_score.toFixed(1)}</td>
+            <td class="num" style="color:#22d3ee">${r.cvs_score.toFixed(1)}</td>
+            <td class="num" style="color:${r.cvs_delta > 0 ? "#34d399" : r.cvs_delta < 0 ? "#fb7185" : "#64748b"}">${r.cvs_delta > 0 ? "+" : ""}${r.cvs_delta.toFixed(1)}</td>
+            <td class="num" style="color:${r.share_to_like_pct >= 15 ? "#f59e0b" : "#cbd5e1"}">${r.share_to_like_pct > 0 ? `${r.share_to_like_pct}%` : "--"}</td>
+            <td class="num" style="color:${r.breakout_ratio >= 5 ? "#34d399" : "#cbd5e1"}">${r.breakout_ratio > 0 ? `${r.breakout_ratio}x` : "--"}</td>
+            <td class="num">${r.remix_breadth > 0 ? r.remix_breadth : "--"}</td>
+            <td class="num">${r.market_yes_pct != null ? `<span style="color:#a78bfa">${r.market_yes_pct}%</span>` : "--"}</td>
+            <td class="num">
+              ${r.signal_id ? `<button type="button" class="btn-action amber" data-quant-log="${r.signal_id}" style="padding:2px 7px;font-size:10px">Log Call</button>` : ""}
+            </td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="11" style="color:#8b9bb0;text-align:center;padding:18px">No tickers match current factor thresholds. Try lowering Min Share/Like or Min Breakout.</td></tr>`;
+
+  const divHtml = (q.divergences || []).length
+    ? q.divergences
+        .map(
+          (d) => `
+          <div class="commit-row">
+            <div>
+              <div class="commit-msg"><b style="color:#38bdf8">${esc(d.ticker)}</b> · ${esc(d.name)}</div>
+              <div class="commit-meta">${esc(d.market_source)} YES: <b>${d.market_yes_pct}%</b> vs Social CVS: <b>${d.cvs_score}</b></div>
+            </div>
+            <span class="pill" style="color:${d.direction === "SOCIAL_AHEAD" ? "#34d399" : d.direction === "MARKET_AHEAD" ? "#f59e0b" : "#94a3b8"}">${esc(d.direction)} (${d.divergence_pts > 0 ? "+" : ""}${d.divergence_pts})</span>
+          </div>`
+        )
+        .join("")
+    : `<p style="color:#8b9bb0;font-size:12px;margin:0">No frozen Polymarket/Kalshi signals yet. Open <b>LIVE TERMINAL → MKTS</b> and click <b>Freeze t₀ Signal</b> on any live market to track Social-vs-Odds divergences here.</p>`;
+
+  const secHtml = (q.sector_scorecard || []).length
+    ? `<table class="hub-table"><thead><tr><th>SECTOR</th><th class="num">RESOLVED</th><th class="num">CORRECT</th><th class="num">HIT RATE</th></tr></thead><tbody>${q.sector_scorecard
+        .map(
+          (x) => `<tr><td><span class="pill">${esc(x.sector)}</span></td><td class="num">${x.resolved}</td><td class="num">${x.correct}</td><td class="num" style="color:#34d399;font-weight:700">${x.hit_rate_pct}%</td></tr>`
+        )
+        .join("")}</tbody></table>`
+    : `<p style="color:#8b9bb0;font-size:12px;margin:0">Resolve 48–72h predictions in <b>LOG / 48-72H</b> to populate per-sector Quant hit rates.</p>`;
+
+  el.innerHTML = `
+    <div class="hub-page">
+      <div class="hub-header-row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0;font-size:16px;font-family:monospace;color:#fb7185">QUANT DESK // MULTI-FACTOR CULTURAL ALPHA SCREENER</h2>
+          <div style="font-size:11.5px;color:#94a3b8;margin-top:2px">Ranks Content IP by <b>Derivative/Geo Breadth</b>, <b>Share-to-Like %</b>, <b>Breakout Ratio</b>, and <b>CVS Momentum</b>—plus Market-vs-Social divergence &amp; Brier calibration.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn-action green" href="/api/quant/export.csv" download="ipx_quant_factors.csv" style="text-decoration:none">⬇ Export Factors CSV</a>
+          <button type="button" class="btn-action cyan" id="btn-quant-open-mkts">Open MKTS</button>
+          <button type="button" class="btn-action amber" id="btn-quant-open-map">Open US MAP</button>
+          <button type="button" class="btn-action" id="btn-refresh-quant">Refresh</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">STRONG SIGNALS</div><div style="font-size:20px;font-weight:800;color:#34d399">${s.strong_signals ?? 0}</div><div style="font-size:10.5px;color:#64748b">${s.watch_signals ?? 0} on watch · ${s.tracked_tickers ?? 0} tracked</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">QUANT HIT RATE</div><div style="font-size:20px;font-weight:800;color:#22d3ee">${s.human_hit_rate_pct != null ? `${s.human_hit_rate_pct}%` : "--"}</div><div style="font-size:10.5px;color:#64748b">${s.resolved_calls ?? 0} resolved calls</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">EDGE VS AI</div><div style="font-size:20px;font-weight:800;color:${(s.edge_vs_ai_pct ?? 0) >= 0 ? "#34d399" : "#fb7185"}">${s.edge_vs_ai_pct != null ? `${s.edge_vs_ai_pct >= 0 ? "+" : ""}${s.edge_vs_ai_pct}%` : "--"}</div><div style="font-size:10.5px;color:#64748b">AI hit: ${s.ai_hit_rate_pct != null ? `${s.ai_hit_rate_pct}%` : "--"}</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">BRIER CALIBRATION</div><div style="font-size:20px;font-weight:800;color:#f59e0b">${s.brier_calibration_pct != null ? `${s.brier_calibration_pct}%` : "--"}</div><div style="font-size:10.5px;color:#64748b">Confidence accuracy</div></div>
+        <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">PENDING 48-72H</div><div style="font-size:20px;font-weight:800;color:#a78bfa">${s.pending_calls ?? 0}</div><div style="font-size:10.5px;color:${(s.overdue_calls ?? 0) > 0 ? "#fb7185" : "#64748b"}">${s.overdue_calls ?? 0} overdue for resolution</div></div>
+      </div>
+
+      <div class="hub-card" style="margin-bottom:14px">
+        <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+          <span>MULTI-FACTOR SCREENER (${filtered.length} / ${allRows.length})</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <select id="q-sector" class="hub-filter-select">
+              ${["ALL", "POP", "MUSIC", "FILM_TV", "GAMING", "CREATORS", "SPORTS", "DEALS"].map((x) => `<option value="${x}" ${hubState.quantSectorFilter === x ? "selected" : ""}>Sector: ${x}</option>`).join("")}
+            </select>
+            <select id="q-flag" class="hub-filter-select">
+              ${["ALL", "STRONG_SIGNAL", "WATCH", "NOISE"].map((x) => `<option value="${x}" ${hubState.quantFlagFilter === x ? "selected" : ""}>Signal: ${x}</option>`).join("")}
+            </select>
+            <select id="q-min-share" class="hub-filter-select">
+              <option value="0" ${hubState.quantMinShare == 0 ? "selected" : ""}>Min Share/Like: Any</option>
+              <option value="10" ${hubState.quantMinShare == 10 ? "selected" : ""}>Share/Like ≥ 10%</option>
+              <option value="20" ${hubState.quantMinShare == 20 ? "selected" : ""}>Share/Like ≥ 20%</option>
+            </select>
+            <select id="q-min-breakout" class="hub-filter-select">
+              <option value="0" ${hubState.quantMinBreakout == 0 ? "selected" : ""}>Min Breakout: Any</option>
+              <option value="3" ${hubState.quantMinBreakout == 3 ? "selected" : ""}>Breakout ≥ 3x</option>
+              <option value="8" ${hubState.quantMinBreakout == 8 ? "selected" : ""}>Breakout ≥ 8x</option>
+            </select>
+            <select id="q-sort" class="hub-filter-select">
+              <option value="alpha_score" ${hubState.quantSortBy === "alpha_score" ? "selected" : ""}>Sort: Alpha Score</option>
+              <option value="share_to_like_pct" ${hubState.quantSortBy === "share_to_like_pct" ? "selected" : ""}>Sort: Share/Like %</option>
+              <option value="breakout_ratio" ${hubState.quantSortBy === "breakout_ratio" ? "selected" : ""}>Sort: Breakout Ratio</option>
+              <option value="remix_breadth" ${hubState.quantSortBy === "remix_breadth" ? "selected" : ""}>Sort: Remix/Geo Breadth</option>
+              <option value="cvs_score" ${hubState.quantSortBy === "cvs_score" ? "selected" : ""}>Sort: CVS Score</option>
+              <option value="cvs_delta" ${hubState.quantSortBy === "cvs_delta" ? "selected" : ""}>Sort: Δ CVS</option>
+            </select>
+          </div>
+        </div>
+        <div class="hub-card-body" style="overflow-x:auto">
+          <table class="hub-table">
+            <thead>
+              <tr>
+                <th>TICKER</th><th>SECTOR</th><th>SIGNAL</th>
+                <th class="num">ALPHA</th><th class="num">CVS</th><th class="num">Δ CVS</th>
+                <th class="num">SHARE/LIKE</th><th class="num">BREAKOUT</th><th class="num">REMIX/GEO</th><th class="num">MKT YES</th><th class="num">ACTION</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+        <div class="hub-card">
+          <div class="hub-card-header"><span>ODDS VS. SOCIAL DIVERGENCE RADAR</span></div>
+          <div class="hub-card-body">${divHtml}</div>
+        </div>
+        <div class="hub-card">
+          <div class="hub-card-header"><span>SECTOR CALIBRATION SCORECARD</span></div>
+          <div class="hub-card-body">${secHtml}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("btn-refresh-quant").addEventListener("click", loadQuant);
+  document.getElementById("btn-quant-open-mkts").addEventListener("click", () => {
+    switchHubView("terminal", true);
+    state.activeTab = "MKTS";
+    renderDesk();
+  });
+  document.getElementById("btn-quant-open-map").addEventListener("click", () => {
+    switchHubView("terminal", true);
+    state.activeTab = "MAP";
+    renderDesk();
+  });
+  document.getElementById("q-sector").addEventListener("change", (e) => { hubState.quantSectorFilter = e.target.value; renderQuantView(); });
+  document.getElementById("q-flag").addEventListener("change", (e) => { hubState.quantFlagFilter = e.target.value; renderQuantView(); });
+  document.getElementById("q-min-share").addEventListener("change", (e) => { hubState.quantMinShare = Number(e.target.value); renderQuantView(); });
+  document.getElementById("q-min-breakout").addEventListener("change", (e) => { hubState.quantMinBreakout = Number(e.target.value); renderQuantView(); });
+  document.getElementById("q-sort").addEventListener("change", (e) => { hubState.quantSortBy = e.target.value; renderQuantView(); });
+
+  el.querySelectorAll("[data-quant-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchHubView("terminal", true);
+      if (typeof selectTicker === "function") selectTicker(btn.dataset.quantJump);
+    });
+  });
+  el.querySelectorAll("[data-quant-log]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sig = (state.signals || []).find((x) => x.id === Number(btn.dataset.quantLog));
+      if (sig && typeof openLogPredictionModal === "function") openLogPredictionModal(sig);
+    });
+  });
 }
 
 /* ---------------- TAB 1: EVAL TRACKING ---------------- */
@@ -867,7 +1068,7 @@ document.getElementById("btn-auth-lock")?.addEventListener("click", () => openUn
 
 window.addEventListener("hashchange", () => {
   const h = window.location.hash.replace("#", "").toLowerCase();
-  if (["evals", "terminal", "orchestration", "updates"].includes(h) && h !== hubState.activeView) {
+  if (["evals", "terminal", "quant", "orchestration", "updates"].includes(h) && h !== hubState.activeView) {
     switchHubView(h, false);
   }
 });
@@ -875,6 +1076,6 @@ window.addEventListener("hashchange", () => {
 // Initialize auth status & deep-link view from hash
 refreshAuthStatus();
 const initialHash = window.location.hash.replace("#", "").toLowerCase();
-if (["evals", "terminal", "orchestration", "updates"].includes(initialHash)) {
+if (["evals", "terminal", "quant", "orchestration", "updates"].includes(initialHash)) {
   switchHubView(initialHash, false);
 }
