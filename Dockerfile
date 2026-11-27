@@ -9,13 +9,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md CONTEXT.md ./
+COPY pyproject.toml README.md CONTEXT.md QUANT_PLAYBOOK.md ./
 COPY src ./src
 COPY schemas ./schemas
 COPY data/orchestration.json ./data/orchestration.json
 COPY data/creator_watchlist.json ./data/creator_watchlist.json
+COPY data/requirements_vcrm.json ./data/requirements_vcrm.json
 
-RUN mkdir -p /data /app/exports/ipx-eval
+RUN mkdir -p /data /app/exports/ipx-eval /app/data/quant_memos
 
 EXPOSE 8765
 

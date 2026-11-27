@@ -9,9 +9,16 @@ from typing import Any, Callable, Dict, List, Optional
 import urllib.error
 import urllib.request
 
-from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, _extract_json_object, resolve_ai_credentials
-from ipx_terminal.config import CATEGORY_LABELS, DEFAULT_QUESTIONS, VALID_CATEGORIES, VALID_SECTORS
+from ipx_terminal.ai_scorer import DEFAULT_AI_BASE_URL, _extract_json_object, generate_creative_brief, resolve_ai_credentials
+from ipx_terminal.config import (
+    CATEGORY_LABELS,
+    DEFAULT_EXPORT_DIR,
+    DEFAULT_QUESTIONS,
+    VALID_CATEGORIES,
+    VALID_SECTORS,
+)
 from ipx_terminal.db import TerminalDB, utc_now_iso
+from ipx_terminal.exporter import export_resolved_to_jsonl
 from ipx_terminal.ingest import fetch_prediction_markets, fetch_us_contagion_map, recheck_overdue_predictions
 from ipx_terminal.quant import build_quant_workspace
 
@@ -111,6 +118,12 @@ def _render_memo_markdown(memo: Dict[str, Any]) -> str:
         lines.append(
             f"- **{sig.get('ticker', '?')}** ({sig.get('signal_flag', 'WATCH')}): {sig.get('thesis', '')}"
         )
+    if memo.get("drafted_briefs"):
+        lines.extend(["", "## Ready-to-Shoot Video Briefs Auto-Drafted"])
+        for b in memo["drafted_briefs"]:
+            lines.append(
+                f"- **{b.get('ticker', '?')}** ({b.get('target_platform', 'TikTok')}): *{b.get('angle', '')}* — Hook: \"{b.get('hook_2s', '')}\""
+            )
     if memo.get("actions_taken"):
         lines.extend(["", "## Autonomous Actions Executed"])
         for act in memo["actions_taken"]:
@@ -120,6 +133,165 @@ def _render_memo_markdown(memo: Dict[str, Any]) -> str:
         for v in memo["vcrm_actions"]:
             lines.append(f"- {v}")
     return "\n".join(lines).strip() + "\n"
+
+
+def auto_resolve_clear_cut_outcomes(
+    db: TerminalDB,
+    recheck_result: Dict[str, Any],
+    export_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Deterministically resolve clear-cut overdue 48-72h calls from real metrics (zero AI self-grading).
+
+    Only resolves unambiguous breakout/noise outcomes based on verified ScrapeCreators / live
+    metric deltas; ambiguous middle-ground calls remain pending for human adjudication.
+    """
+    resolved_items: List[Dict[str, Any]] = []
+    skipped_ambiguous: List[str] = []
+
+    for item in recheck_result.get("checked") or []:
+        pred_id = item.get("prediction_id")
+        if not pred_id:
+            continue
+        pred = db.get_prediction(int(pred_id))
+        if not pred or pred.get("status") != "pending":
+            continue
+        cat = str(pred.get("category") or "")
+        if cat not in ("breakout", "contagion"):
+            continue
+
+        deltas = item.get("deltas") or {}
+        live = item.get("live_metrics") or {}
+        views_delta = float(deltas.get("views_delta") or 0.0)
+        views_ratio = float(deltas.get("views_ratio") or 0.0)
+        cur_views = float(live.get("views") or 0.0)
+        cur_likes = float(live.get("likes") or 0.0)
+        cur_shares = float(live.get("shares") or 0.0)
+        share_to_like = (cur_shares / cur_likes) if (cur_shares > 0 and cur_likes > 0) else 0.0
+
+        label: Optional[str] = None
+        if cat == "breakout":
+            if views_ratio >= 2.0 or views_delta >= 250_000 or (cur_views >= 500_000 and share_to_like >= 0.15):
+                label = "breakout"
+            elif 0 < views_ratio <= 1.15 and views_delta < 25_000:
+                label = "noise"
+        elif cat == "contagion":
+            if views_ratio >= 2.5 or views_delta >= 500_000:
+                label = "mainstream_breakout"
+            elif 0 < views_ratio <= 1.15 and views_delta < 25_000:
+                label = "echo_chamber"
+
+        if not label:
+            skipped_ambiguous.append(str(pred.get("case_code") or pred_id))
+            continue
+
+        rationale = (
+            f"Deterministic 48-72h metric adjudication ({item.get('provider', 'live')}): "
+            f"views_ratio={views_ratio:.2f}x, views_delta={int(views_delta):+}, "
+            f"current_views={int(cur_views):,}, share_to_like={share_to_like * 100:.1f}%."
+        )
+        resolved = db.resolve_prediction(
+            prediction_id=int(pred_id),
+            ground_truth_label=label,
+            required_concepts=[pred["ticker"], label],
+            rationale=rationale,
+            outcome_metrics={
+                "provider": item.get("provider", "live"),
+                "views_ratio": round(views_ratio, 2),
+                "views_delta": int(views_delta),
+                "current_views": int(cur_views),
+                "share_to_like_pct": round(share_to_like * 100.0, 1),
+                "adjudication": "deterministic_numeric_threshold",
+            },
+        )
+        resolved_items.append(
+            {
+                "prediction_id": int(pred_id),
+                "case_code": resolved["case_code"],
+                "ticker": resolved["ticker"],
+                "ground_truth_label": label,
+                "prediction_correct": bool((resolved.get("outcome") or {}).get("prediction_correct")),
+            }
+        )
+
+    exported_count = 0
+    if resolved_items:
+        try:
+            exp = export_resolved_to_jsonl(db=db, out_dir=export_dir or DEFAULT_EXPORT_DIR)
+            exported_count = int(exp.get("total_exported") or 0)
+        except Exception:
+            exported_count = 0
+
+    return {
+        "resolved_count": len(resolved_items),
+        "resolved": resolved_items,
+        "skipped_ambiguous": skipped_ambiguous,
+        "exported_count": exported_count,
+    }
+
+
+def auto_draft_morning_briefs(
+    db: TerminalDB,
+    screener: List[Dict[str, Any]],
+    api_key: str,
+    model: str,
+    base_url: str = DEFAULT_AI_BASE_URL,
+    max_briefs: int = 2,
+) -> List[Dict[str, Any]]:
+    """Auto-draft ready-to-shoot short-form Video Briefs for top STRONG_SIGNAL / high-alpha tickers."""
+    existing_sig_ids = {b["signal_id"] for b in db.list_briefs(limit=250)}
+    drafted: List[Dict[str, Any]] = []
+
+    candidates = [
+        r for r in screener
+        if r.get("signal_id") and r["signal_id"] not in existing_sig_ids
+        and (r.get("signal_flag") == "STRONG_SIGNAL" or float(r.get("alpha_score") or 0.0) >= 30.0)
+    ]
+    for row in candidates[: max(0, max_briefs)]:
+        sig = db.get_signal(int(row["signal_id"]))
+        if not sig:
+            continue
+        platforms = sig.get("platforms") or []
+        target_plat = "TikTok"
+        for p in platforms:
+            pl = str(p).lower()
+            if "shorts" in pl or "youtube" in pl:
+                target_plat = "YouTube Shorts"
+                break
+            if "reel" in pl or "instagram" in pl:
+                target_plat = "Instagram Reels"
+                break
+            if "tiktok" in pl:
+                target_plat = "TikTok"
+                break
+        gen = generate_creative_brief(
+            signal=sig,
+            target_platform=target_plat,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+        )
+        saved = db.create_brief(
+            signal_id=sig["id"],
+            target_platform=target_plat,
+            angle=gen["angle"],
+            hook_2s=gen["hook_2s"],
+            on_screen_text=gen["on_screen_text"],
+            caption=gen["caption"],
+            edit_beats=gen["edit_beats"],
+            audio_cue=gen["audio_cue"],
+            model_used=gen.get("model_used") or model,
+        )
+        drafted.append(
+            {
+                "brief_id": saved["id"],
+                "signal_id": sig["id"],
+                "ticker": saved["ticker"],
+                "target_platform": saved["target_platform"],
+                "angle": saved["angle"],
+                "hook_2s": saved["hook_2s"],
+            }
+        )
+    return drafted
 
 
 def run_gemini_quant(
@@ -157,8 +329,9 @@ def run_gemini_quant(
 
     actions_taken: List[str] = []
     recheck_summary: Dict[str, Any] = {"overdue_count": 0, "checked_count": 0}
+    auto_resolve_summary: Dict[str, Any] = {"resolved_count": 0, "resolved": [], "exported_count": 0}
 
-    # 1. Clear/recheck overdue 48-72h calls first (deterministic real-world fetch)
+    # 1. Clear/recheck overdue 48-72h calls first (deterministic real-world fetch + clear-cut auto-resolve)
     if fetch_live and not dry_run:
         try:
             recheck_summary = recheck_overdue_predictions(db=db)
@@ -166,6 +339,16 @@ def run_gemini_quant(
                 actions_taken.append(
                     f"Auto-rechecked {recheck_summary['checked_count']} overdue 48-72h call(s) via live metrics."
                 )
+                auto_resolve_summary = auto_resolve_clear_cut_outcomes(db=db, recheck_result=recheck_summary)
+                for r in auto_resolve_summary.get("resolved") or []:
+                    actions_taken.append(
+                        f"Auto-resolved {r['case_code']} ({r['ticker']}) -> {r['ground_truth_label']} "
+                        f"({'HIT' if r['prediction_correct'] else 'MISS'}) from live metrics."
+                    )
+                if auto_resolve_summary.get("exported_count"):
+                    actions_taken.append(
+                        f"Auto-exported {auto_resolve_summary['exported_count']} resolved case(s) to IPX-Eval JSONL."
+                    )
         except Exception as exc:
             actions_taken.append(f"Overdue recheck skipped: {exc}")
 
@@ -349,6 +532,25 @@ def run_gemini_quant(
             except Exception:
                 continue
 
+    # 4. In Morning Pass, auto-draft up to 2 ready-to-shoot Video Briefs for top STRONG_SIGNAL tickers
+    drafted_briefs: List[Dict[str, Any]] = []
+    if not dry_run and norm_mode == "morning":
+        try:
+            drafted_briefs = auto_draft_morning_briefs(
+                db=db,
+                screener=quant_ws.get("screener") or [],
+                api_key=resolved_key,
+                model=used_model,
+                base_url=resolved_url,
+                max_briefs=2,
+            )
+            for b in drafted_briefs:
+                actions_taken.append(
+                    f"Auto-drafted Video Brief #{b['brief_id']} for {b['ticker']} ({b['target_platform']}): {b['angle'][:65]}"
+                )
+        except Exception:
+            drafted_briefs = []
+
     created_at = utc_now_iso()
     memo: Dict[str, Any] = {
         "id": f"qmemo-{created_at.replace(':', '').replace('-', '')}",
@@ -363,6 +565,8 @@ def run_gemini_quant(
         "actions_taken": actions_taken,
         "frozen_signals": frozen_signals,
         "logged_predictions": logged_predictions,
+        "drafted_briefs": drafted_briefs,
+        "auto_resolved": auto_resolve_summary.get("resolved") or [],
         "recheck_summary": {
             "overdue_count": recheck_summary.get("overdue_count", 0),
             "checked_count": recheck_summary.get("checked_count", 0),

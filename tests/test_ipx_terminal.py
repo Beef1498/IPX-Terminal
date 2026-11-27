@@ -618,6 +618,30 @@ class TestIPXTerminal(unittest.TestCase):
         saved = list_quant_memos(memos_dir=memos_dir)
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["headline"], "IPX.AIQ crosses 40% share-to-like threshold")
+        self.assertGreaterEqual(len(memo["drafted_briefs"]), 1)
+
+        # Deterministic 48-72h auto-resolver test (zero AI self-grading)
+        from ipx_terminal.quant_agent import auto_resolve_clear_cut_outcomes
+
+        pred_id = memo["logged_predictions"][0]["id"]
+        res = auto_resolve_clear_cut_outcomes(
+            db=self.db,
+            recheck_result={
+                "checked": [
+                    {
+                        "prediction_id": pred_id,
+                        "provider": "scrapecreators",
+                        "deltas": {"views_ratio": 3.4, "views_delta": 410_000},
+                        "live_metrics": {"views": 600_000, "likes": 30_000, "shares": 7_500},
+                    }
+                ]
+            },
+            export_dir=Path(self._tmp.name) / "exports",
+        )
+        self.assertEqual(res["resolved_count"], 1)
+        self.assertEqual(res["resolved"][0]["ground_truth_label"], "breakout")
+        self.assertTrue(res["resolved"][0]["prediction_correct"])
+        self.assertGreaterEqual(res["exported_count"], 1)
 
 
 if __name__ == "__main__":

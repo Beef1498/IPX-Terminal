@@ -274,6 +274,11 @@ function renderQuantView() {
         const vActs = (m.vcrm_actions || [])
           .map((a) => `<li style="color:#f59e0b;font-size:11.5px;margin:2px 0">${esc(a)}</li>`)
           .join("");
+        const briefsHtml = (m.drafted_briefs || [])
+          .map(
+            (b) => `<div style="margin-top:4px;font-size:11.5px;padding:6px 8px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.2);border-radius:6px"><b style="color:#22d3ee;font-family:monospace">${esc(b.ticker)}</b> <span class="pill cyan">${esc(b.target_platform)}</span> — <span style="color:#f1f5f9">${esc(b.angle)}</span><div style="color:#94a3b8;margin-top:2px">Hook: "${esc(b.hook_2s)}"</div></div>`
+          )
+          .join("");
         return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(251,113,133,0.45)">
           <div class="hub-card-header" style="flex-wrap:wrap;gap:6px">
             <span>GEMINI AI QUANT MEMO // ${esc((m.mode || "morning").toUpperCase())}</span>
@@ -286,6 +291,7 @@ function renderQuantView() {
             <div style="font-weight:700;font-size:13.5px;color:#f8fafc;margin-bottom:6px">${esc(m.headline || "")}</div>
             <p style="margin:0 0 10px;font-size:12.5px;color:#cbd5e1;line-height:1.45">${esc(m.executive_summary || "")}</p>
             ${sigList ? `<div style="margin-bottom:10px">${sigList}</div>` : ""}
+            ${briefsHtml ? `<div style="margin-bottom:10px"><div style="font-family:monospace;font-size:10.5px;color:#22d3ee;margin-bottom:4px">AUTO-DRAFTED VIDEO BRIEFS (SAVED IN LIVE TERMINAL → BRIEF)</div>${briefsHtml}</div>` : ""}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
               ${acts ? `<div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8;margin-bottom:4px">AUTONOMOUS ACTIONS EXECUTED</div><ul style="margin:0;padding-left:16px">${acts}</ul></div>` : ""}
               ${vActs ? `<div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8;margin-bottom:4px">VCRM GATE ACTION ITEMS</div><ul style="margin:0;padding-left:16px">${vActs}</ul></div>` : ""}
