@@ -712,6 +712,8 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertEqual(draft.get("project_id"), "street_mob")
         self.assertIn("Street Mob", draft["angle"])
         self.assertTrue(draft.get("matched_track"))
+        self.assertEqual(draft.get("production_format"), "clip_flip_meme")
+        self.assertTrue(draft.get("asset_recipe"))
 
         # Priority project slots in daily niche rotation
         wl_path = Path(self._tmp.name) / "watchlist_proj.json"

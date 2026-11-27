@@ -660,12 +660,56 @@ def run_gemini_quant(
         "live_us_contagion_clusters": map_clusters,
         "valid_categories_and_labels": {k: list(v) for k, v in CATEGORY_LABELS.items()},
     }
+    if active_project:
+        compact_snapshot["active_client_project"] = {
+            "id": active_project.get("id"),
+            "name": active_project.get("name"),
+            "label_name": active_project.get("label_name"),
+            "languages": active_project.get("languages"),
+            "target_geos": active_project.get("target_geos"),
+            "priority_niches": active_project.get("priority_niches"),
+            "brand_voice": active_project.get("brand_voice"),
+            "production_mode": active_project.get("production_mode"),
+            "production_constraints": active_project.get("production_constraints"),
+            "roster_tickers": [e.get("ticker") for e in (active_project.get("roster_entities") or [])],
+            "catalog_tracks": [
+                {
+                    "title": t.get("title"),
+                    "artist": t.get("artist"),
+                    "status": t.get("status"),
+                    "vibe_tags": t.get("vibe_tags"),
+                }
+                for t in (active_project.get("catalog_tracks") or [])
+            ],
+        }
+
+    client_directive = ""
+    if active_project:
+        faceless_note = ""
+        if str(active_project.get("production_mode") or "") == "faceless_at_scale":
+            faceless_note = (
+                " FACELESS-AT-SCALE CONSTRAINT: The client runs faceless accounts with NO on-camera talent or IRL filming. "
+                "Prioritize trends replicable at scale using existing online clips (anime/cartoons, sports, car/trokiando edits, "
+                "viral memes), WhatsApp/iMessage/carousel slideshows, AI-generated/animated loops, or recut artist concert footage. "
+                "Reject or translate any IRL/on-camera trend into a specific faceless edit recipe."
+            )
+        client_directive = (
+            f"\nACTIVE CLIENT FOCUS: You are writing this memo specifically for **{active_project.get('name')}** "
+            f"(Label: {active_project.get('label_name')}, Languages: {active_project.get('languages')}, "
+            f"Target Geos: {active_project.get('target_geos')}). "
+            "Tailor the 'headline', 'executive_summary', and each 'top_signals' thesis to how this client can "
+            "capitalize on emerging trends (both within their niche AND cross-over mainstream POP/CREATORS/SPORTS formats "
+            "they can audio-flip into Spanish/Spanglish). Explicitly name the best-fitting song titles from "
+            "'active_client_project.catalog_tracks' to seed behind each actionable trend."
+            f"{faceless_note}\n"
+        )
 
     system_prompt = (
         "You are the Lead Quantitative Analyst on IPX Terminal (Content IP & Cultural Velocity Desk). "
         "Follow the strict IPX signal hierarchy: Derivative Remakes / US Geographic Breadth > "
         "Share-to-Like Ratio % > Views-to-Followers Breakout Ratio > Raw Solo Likes. "
-        "NEVER fabricate metrics or 48-72h outcomes. Only reason from the t_0 snapshot provided.\n"
+        "NEVER fabricate metrics or 48-72h outcomes. Only reason from the t_0 snapshot provided."
+        f"{client_directive}\n"
         "Return STRICT JSON with keys:\n"
         "- 'headline': string (crisp 1-line desk headline)\n"
         "- 'executive_summary': string (2-4 concise sentences on what matters right now)\n"
@@ -837,6 +881,8 @@ def run_gemini_quant(
         "mode": norm_mode,
         "model_used": used_model,
         "dry_run": dry_run,
+        "project_id": active_project.get("id") if active_project else None,
+        "project_name": active_project.get("name") if active_project else None,
         "headline": str(decision.get("headline") or f"Gemini Quant {norm_mode.title()} Desk Update"),
         "executive_summary": str(decision.get("executive_summary") or ""),
         "top_signals": list(decision.get("top_signals") or [])[:5],

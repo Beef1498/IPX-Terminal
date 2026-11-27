@@ -1081,9 +1081,13 @@ function openCreateBriefModal(signal) {
       document.getElementById("brief-beats").value = (d.edit_beats || []).join("\n");
       document.getElementById("brief-audio").value = d.audio_cue || "";
       const matchEl = document.getElementById("brief-matched-track");
-      if (d.matched_track) {
+      if (d.matched_track || d.production_format || d.asset_recipe) {
         matchEl.style.display = "block";
-        matchEl.innerHTML = `🎵 <b>Matched Catalog Track:</b> ${esc(d.matched_track)}`;
+        const parts = [];
+        if (d.matched_track) parts.push(`🎵 <b>Track:</b> ${esc(d.matched_track)}`);
+        if (d.production_format) parts.push(`<span class="pill cyan" style="margin-left:4px">${esc(d.production_format)}</span>`);
+        const recipeLine = d.asset_recipe ? `<div style="margin-top:4px;color:#cbd5e1">🎬 <b>Faceless Asset Recipe:</b> ${esc(d.asset_recipe)}</div>` : "";
+        matchEl.innerHTML = `${parts.join(" ")}${recipeLine}`;
       } else {
         matchEl.style.display = "none";
       }

@@ -285,6 +285,7 @@ function renderQuantView() {
           <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
             <span>★ CLIENT PROJECT // ${esc((activeProj.name || activeProj.id).toUpperCase())}</span>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${activeProj.production_mode === "faceless_at_scale" ? `<span class="pill green">FACELESS AT SCALE</span>` : ""}
               <span class="pill cyan">${esc((activeProj.languages || []).join(" / "))}</span>
               <span class="pill">${(activeProj.priority_niches || []).length} Priority Niches</span>
               <span class="pill">${(activeProj.target_geos || []).slice(0, 6).join(", ")}</span>

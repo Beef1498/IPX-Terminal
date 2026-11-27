@@ -17,7 +17,8 @@
     "platform": "YouTube Shorts",
     "handle": "Mrwhosetheboss",
     "sector": "CREATORS",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T19:55:29Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -69,7 +70,8 @@
     "platform": "Instagram Reels",
     "handle": "tracklib",
     "sector": "MUSIC",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T19:55:29Z"
   },
   {
     "platform": "YouTube Shorts",
@@ -192,7 +194,8 @@
     "platform": "Instagram Reels",
     "handle": "complex",
     "sector": "POP",
-    "last_pulled_at": "2026-11-26T00:57:00Z"
+    "last_pulled_at": "2026-11-26T00:57:00Z",
+    "last_terminal_ingest_at": "2026-11-27T19:55:29Z"
   },
   {
     "platform": "X",
@@ -355,7 +358,8 @@
     "handle": "fuerzaregida",
     "sector": "MUSIC",
     "niche": "street_mob_roster",
-    "project": "street_mob"
+    "project": "street_mob",
+    "last_terminal_ingest_at": "2026-11-27T19:55:29Z"
   },
   {
     "platform": "Instagram Reels",
@@ -397,7 +401,8 @@
     "handle": "billboardlatin",
     "sector": "MUSIC",
     "niche": "musica_mexicana_trends",
-    "project": "street_mob"
+    "project": "street_mob",
+    "last_terminal_ingest_at": "2026-11-27T19:55:29Z"
   },
   {
     "platform": "Instagram Reels",

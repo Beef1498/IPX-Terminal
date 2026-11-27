@@ -13,7 +13,24 @@
     "latin_pov_comedy",
     "corridos_edits"
   ],
-  "brand_voice": "Authentic Regional Mexican / Musica Mexicana & LA/IE bilingual street culture. Raw, unpolished, confident, and relatable (desamor, toxic-relationship POVs, trokiando/car edits, nightlife/antros, hustle/flex). Zero corporate copy or translated-AI slang.",
+  "brand_voice": "Authentic Regional Mexican / Musica Mexicana & LA/IE bilingual street culture. Raw, unpolished, confident, and relatable (desamor, toxic-relationship POVs, trokiando/car edits, nightlife/antros, hustle/flex, corridos belicos). Zero corporate copy or translated-AI slang.",
+  "production_mode": "faceless_at_scale",
+  "production_constraints": {
+    "allowed_formats": [
+      "clip_flip_meme",
+      "slideshow_chat_pov",
+      "ai_animated_edit",
+      "artist_footage_recut"
+    ],
+    "banned_formats": [
+      "on_camera_talent",
+      "irl_filming",
+      "face_to_camera_talking_head",
+      "physical_grwm_shoot",
+      "live_actor_skit"
+    ],
+    "visual_sources": "100% faceless & scalable: existing online viral clips (DBZ/SpongeBob/Shrek/anime, movies, sports highlights, trokiando/car footage, comedy clips), TikTok/IG photo carousels & WhatsApp/iMessage screenshots, AI-generated/animated loops (GTA/anime/3D LA-IE street scenes), or recut existing Fuerza Regida / Street Mob concert & MV footage."
+  },
   "roster_entities": [
     {
       "ticker": "FRZR.MU",
@@ -60,81 +77,284 @@
   ],
   "catalog_tracks": [
     {
-      "track_id": "frzr-tu-boda",
+      "track_id": "sm-olimpo",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Olimpo",
+      "status": "priority_push",
+      "vibe_tags": ["flex", "win", "boss", "hustle", "sports", "level_up", "corrido_belico"],
+      "format_archetypes": ["level_up_montage", "sports_highlight", "hustle_edit"],
+      "clip_timestamp": "Chorus drop (15s peak)",
+      "sound_cue": "Drop 'Olimpo' on the hard visual reveal for flex, hustle, or win-moment edits."
+    },
+    {
+      "track_id": "sm-suzuki",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Suzuki",
+      "status": "priority_push",
+      "vibe_tags": ["car", "bike", "trokiando", "speed", "night_drive", "street", "adrenaline"],
+      "format_archetypes": ["car_edit", "motorcycle_edit", "night_drive_pov"],
+      "clip_timestamp": "Hook drop (15s peak)",
+      "sound_cue": "Sync revving/rolling-shot car or bike cuts directly to the 'Suzuki' beat drop."
+    },
+    {
+      "track_id": "sm-coqueta",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Coqueta",
+      "status": "priority_push",
+      "vibe_tags": ["flirt", "grwm", "outfit", "confidence", "baddie", "party", "transition", "dance"],
+      "format_archetypes": ["grwm_transition", "fit_check", "lip_sync_pov"],
+      "clip_timestamp": "Chorus hook (15s peak)",
+      "sound_cue": "Use 'Coqueta' for GRWM transitions, outfit reveals, and confident flirt POVs."
+    },
+    {
+      "track_id": "sm-cuando-no-era-cantante-remix",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Cuando No Era Cantante REMIX",
+      "status": "priority_push",
+      "vibe_tags": ["glow_up", "throwback", "before_after", "hustle", "loyalty", "flex", "remix"],
+      "format_archetypes": ["before_after_glowup", "day_one_pov", "storytime_montage"],
+      "clip_timestamp": "Remix verse/chorus switch (15s)",
+      "sound_cue": "Cut from 'before' photo/clip to 'now' glow-up right as the REMIX beat switches."
+    },
+    {
+      "track_id": "sm-tu-sancho",
+      "artist": "Fuerza Regida",
+      "title": "Tu Sancho",
+      "status": "priority_push",
+      "vibe_tags": ["toxic_pov", "roast", "drama", "situationship", "comedy", "meme", "ex", "group_chat"],
+      "format_archetypes": ["relational_roast", "toxic_pov", "capcut_template", "deadpan_comedy"],
+      "clip_timestamp": "Hook drop (15s peak)",
+      "sound_cue": "Hit 'Tu Sancho' right on the punchline text for toxic situationship / group-chat roast POVs."
+    },
+    {
+      "track_id": "sm-marlboro-rojo",
+      "artist": "Fuerza Regida",
+      "title": "Marlboro Rojo",
+      "status": "priority_push",
+      "vibe_tags": ["late_night", "desamor", "moody", "heartbreak", "night_drive", "nostalgia", "raw"],
+      "format_archetypes": ["late_night_drive", "moody_pov", "text_overlay_storytime"],
+      "clip_timestamp": "Chorus swell (15s peak)",
+      "sound_cue": "Layer 'Marlboro Rojo' over raw late-night car/balcony POVs with <=10-word heartbreak text."
+    },
+    {
+      "track_id": "sm-me-jalo",
+      "artist": "Fuerza Regida & Grupo Frontera",
+      "title": "Me Jalo",
+      "status": "priority_push",
+      "vibe_tags": ["party", "weekend", "friends", "antros", "couple", "dance", "spontaneous", "vibe"],
+      "format_archetypes": ["weekend_recap", "friends_pov", "couple_vibe", "dance_trend"],
+      "clip_timestamp": "Chorus drop (15s peak)",
+      "sound_cue": "Use 'Me Jalo' for 'one text and I'm already dressed' / spontaneous night-out POVs."
+    },
+    {
+      "track_id": "sm-excesos",
+      "artist": "Fuerza Regida",
+      "title": "Excesos",
+      "status": "priority_push",
+      "vibe_tags": ["nightlife", "antros", "party", "luxury", "vip", "late_night", "flex"],
+      "format_archetypes": ["nightlife_recap", "vip_montage", "high_energy_capcut"],
+      "clip_timestamp": "Chorus drop (15s peak)",
+      "sound_cue": "Fast-cut club/nightlife clips synced to the 'Excesos' hook for high-energy weekend recaps."
+    },
+    {
+      "track_id": "sm-que-onda",
+      "artist": "Calle 24 x Chino Pacas x Fuerza Regida",
+      "title": "Que Onda",
+      "status": "priority_push",
+      "vibe_tags": ["late_night", "texting", "situationship", "vibe", "chill", "night_drive", "relatable", "spanglish"],
+      "format_archetypes": ["late_night_text_pov", "car_interior_pov", "audio_flip"],
+      "clip_timestamp": "0:22-0:37 (chorus)",
+      "sound_cue": "Use 'Que Onda' at 0:22 under 2am-text / situationship POV templates to trigger group-chat shares."
+    },
+    {
+      "track_id": "sm-caperuza",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Caperuza",
+      "status": "priority_push",
+      "vibe_tags": ["street", "corrido_belico", "grit", "trokiando", "hustle", "gym"],
+      "format_archetypes": ["trokiando_edit", "gym_pr_edit", "street_aesthetic"],
+      "clip_timestamp": "Brass/bass drop (15s)",
+      "sound_cue": "Drop 'Caperuza' on heavy truck/gym/street reveal transitions."
+    },
+    {
+      "track_id": "sm-ansiedad",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Ansiedad",
+      "status": "priority_push",
+      "vibe_tags": ["overthinking", "desamor", "relatable", "mental_health", "late_night", "vulnerable", "pov"],
+      "format_archetypes": ["relatable_pov", "overthinking_text_overlay", "storytime"],
+      "clip_timestamp": "Emotional hook (15s)",
+      "sound_cue": "Pair 'Ansiedad' with dead-honest 3am overthinking / relatable life-pressure text overlays."
+    },
+    {
+      "track_id": "sm-noche-perfecta",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Noche Perfecta",
+      "status": "catalog_revival",
+      "vibe_tags": ["romance", "date_night", "couple", "night_drive", "aesthetic", "vibe"],
+      "format_archetypes": ["couple_pov", "date_night_recap", "aesthetic_montage"],
+      "clip_timestamp": "Chorus (15s peak)",
+      "sound_cue": "Score soft-lit date-night / couple car-ride clips with the 'Noche Perfecta' chorus."
+    },
+    {
+      "track_id": "sm-pero-no-te-enamores",
+      "artist": "Fuerza Regida",
+      "title": "Pero No Te Enamores",
+      "status": "priority_push",
+      "vibe_tags": ["situationship", "toxic_pov", "party", "antros", "warning", "relatable", "roast"],
+      "format_archetypes": ["situationship_pov", "relational_roast", "nightlife_pov"],
+      "clip_timestamp": "Title hook (15s peak)",
+      "sound_cue": "Drop 'Pero No Te Enamores' on the exact punchline where the POV admits they caught feelings."
+    },
+    {
+      "track_id": "sm-pues-ya-ni-pedo",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "PUES YA NI PEDO",
+      "status": "priority_push",
+      "vibe_tags": ["unbothered", "comedy", "meme", "moving_on", "roast", "sarcasm", "pov", "relatable"],
+      "format_archetypes": ["deadpan_pov", "meme_template", "capcut_template", "relational_roast"],
+      "clip_timestamp": "Title drop (15s peak)",
+      "sound_cue": "Built for high-share 'oh well / unbothered' comedy fails and moving-on POV CapCut templates."
+    },
+    {
+      "track_id": "sm-una-cerveza",
+      "artist": "Fuerza Regida & Manuel Turizo",
+      "title": "Una Cerveza",
+      "status": "catalog_revival",
+      "vibe_tags": ["drinking", "weekend", "friends", "desamor", "carne_asada", "party", "singalong"],
+      "format_archetypes": ["weekend_hangout", "carne_asada_pov", "friends_singalong"],
+      "clip_timestamp": "Chorus (15s peak)",
+      "sound_cue": "Use 'Una Cerveza' for Friday-after-work / carne asada / boys-night relatable POVs."
+    },
+    {
+      "track_id": "sm-por-esos-ojos",
+      "artist": "Fuerza Regida",
+      "title": "Por Esos Ojos",
+      "status": "priority_push",
+      "vibe_tags": ["crush", "romance", "couple", "eyes", "aesthetic", "flirt", "soft_pov"],
+      "format_archetypes": ["crush_pov", "eye_contact_trend", "couple_edit"],
+      "clip_timestamp": "Chorus hook (15s)",
+      "sound_cue": "Perfect for eye-contact / 'how I look at them' couple & crush TikTok/Reels trends."
+    },
+    {
+      "track_id": "sm-chavalitas",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Chavalitas",
+      "status": "catalog_revival",
+      "vibe_tags": ["party", "antros", "friends", "grwm", "hype", "weekend"],
+      "format_archetypes": ["girls_night_pov", "grwm_transition", "club_recap"],
+      "clip_timestamp": "Chorus drop (15s)",
+      "sound_cue": "Pair 'Chavalitas' with group GRWM transitions and girls-night-out recaps."
+    },
+    {
+      "track_id": "sm-como-capo",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Como Capo",
+      "status": "catalog_revival",
+      "vibe_tags": ["boss", "flex", "luxury", "corrido_belico", "car", "sports", "hustle"],
+      "format_archetypes": ["boss_walk_edit", "car_edit", "sports_highlight"],
+      "clip_timestamp": "Heavy drop (15s)",
+      "sound_cue": "Drop 'Como Capo' on slow-mo walkouts, sports highlights, or luxury car reveals."
+    },
+    {
+      "track_id": "sm-ultimante",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Ultimante",
+      "status": "catalog_revival",
+      "vibe_tags": ["reflection", "growth", "solo", "late_night", "hustle", "moody"],
+      "format_archetypes": ["life_update_pov", "solo_montage", "late_night_drive"],
+      "clip_timestamp": "Chorus (15s)",
+      "sound_cue": "Use 'Ultimante' for 'lately I've been locking in / protecting my peace' POV montages."
+    },
+    {
+      "track_id": "sm-crazyz",
+      "artist": "Fuerza Regida",
+      "title": "Crazyz",
+      "status": "catalog_revival",
+      "vibe_tags": ["hype", "chaos", "party", "sports", "adrenaline", "meme", "high_energy"],
+      "format_archetypes": ["chaos_edit", "sports_highlight", "high_energy_capcut"],
+      "clip_timestamp": "Beat drop (15s)",
+      "sound_cue": "Sync chaotic group-friend moments or high-energy sports clips to the 'Crazyz' drop."
+    },
+    {
+      "track_id": "sm-taco-el-flaco",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Taco El Flaco",
+      "status": "catalog_revival",
+      "vibe_tags": ["street", "la_culture", "food", "comedy", "local", "flex", "vibe"],
+      "format_archetypes": ["la_street_pov", "food_run_pov", "local_culture_meme"],
+      "clip_timestamp": "Hook (15s)",
+      "sound_cue": "Use for late-night taco run / LA & IE street culture POVs and local comedy skits."
+    },
+    {
+      "track_id": "sm-toxicos",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Toxicos",
+      "status": "priority_push",
+      "vibe_tags": ["toxic_pov", "couple", "drama", "roast", "comedy", "meme", "situationship", "group_chat"],
+      "format_archetypes": ["toxic_couple_pov", "relational_roast", "capcut_template"],
+      "clip_timestamp": "Chorus hook (15s)",
+      "sound_cue": "Built directly for viral toxic-couple roast templates and 'send this to your toxic half' shares."
+    },
+    {
+      "track_id": "sm-suiza",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Suiza",
+      "status": "catalog_revival",
+      "vibe_tags": ["luxury", "travel", "flex", "watches", "lifestyle", "aesthetic"],
+      "format_archetypes": ["travel_flex", "lifestyle_montage", "soft_flex_pov"],
+      "clip_timestamp": "Chorus (15s)",
+      "sound_cue": "Score travel/watch/luxury lifestyle aesthetic edits with 'Suiza'."
+    },
+    {
+      "track_id": "sm-apaga-el-cel",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Apaga El Cel",
+      "status": "priority_push",
+      "vibe_tags": ["couple", "late_night", "unplug", "flirt", "situationship", "vibe", "weekend"],
+      "format_archetypes": ["couple_pov", "no_phone_vibe", "late_night_pov"],
+      "clip_timestamp": "Hook drop (15s)",
+      "sound_cue": "Use 'Apaga El Cel' for 'put your phone on DND when you're with me' couple/flirt POVs."
+    },
+    {
+      "track_id": "sm-no-pierdo-la-vida",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "No Pierdo La Vida",
+      "status": "catalog_revival",
+      "vibe_tags": ["moving_on", "confidence", "desamor", "self_respect", "unbothered", "pov"],
+      "format_archetypes": ["moving_on_pov", "glow_up", "deadpan_pov"],
+      "clip_timestamp": "Chorus (15s)",
+      "sound_cue": "Pair with confident post-breakup 'not losing sleep over you' glow-up POVs."
+    },
+    {
+      "track_id": "sm-pues-que-le-hago",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Pues Que Le Hago",
+      "status": "catalog_revival",
+      "vibe_tags": ["relatable", "comedy", "desamor", "shrug", "meme", "pov"],
+      "format_archetypes": ["relatable_pov", "comedy_skit", "deadpan_pov"],
+      "clip_timestamp": "Hook (15s)",
+      "sound_cue": "Use for relatable 'what can I even do about it' comedy/heartbreak POV clips."
+    },
+    {
+      "track_id": "sm-tu-boda",
       "artist": "Fuerza Regida & Oscar Maydon",
       "title": "Tu Boda",
       "status": "catalog_revival",
       "vibe_tags": ["desamor", "heartbreak", "toxic_pov", "relational_roast", "ex", "drama", "wedding", "betrayal"],
       "format_archetypes": ["relatable_pov", "text_overlay_storytime", "group_chat_roast", "late_night_drive"],
       "clip_timestamp": "0:42-0:57 (chorus swell)",
-      "hook_lyric": "Quiero manchar el vestido blanco de rojo...",
       "sound_cue": "Drop 'Tu Boda' at 0:42 right on the punchline cut so viewers tap 'Use This Sound' for their own toxic-ex / situationship POV."
     },
     {
-      "track_id": "frzr-harley-quinn",
-      "artist": "Fuerza Regida & Marshmello",
-      "title": "HARLEY QUINN",
-      "status": "catalog_revival",
-      "vibe_tags": ["party", "antros", "club", "hype", "transition", "grwm", "outfit", "nightlife", "dance", "energy"],
-      "format_archetypes": ["grwm_transition", "nightlife_recap", "sports_highlight", "high_energy_capcut"],
-      "clip_timestamp": "0:34-0:49 (EDM-corrido drop)",
-      "hook_lyric": "Ponte las pilas que ya nos vamos...",
-      "sound_cue": "Sync hard visual cut or fit-check reveal to the 0:34 corrido-to-EDM beat drop for high-velocity CapCut remakes."
-    },
-    {
-      "track_id": "frzr-nel",
-      "artist": "Fuerza Regida",
-      "title": "NEL",
+      "track_id": "sm-chula-vente",
+      "artist": "Fuerza Regida / Street Mob",
+      "title": "Chula Vente",
       "status": "priority_push",
-      "vibe_tags": ["confidence", "moving_on", "roast", "sarcasm", "comedy", "pov", "unbothered", "meme"],
-      "format_archetypes": ["deadpan_pov", "relational_roast", "capcut_template", "reaction_flip"],
-      "clip_timestamp": "0:28-0:43 (hook drop)",
-      "hook_lyric": "Nel, ya no estoy pa' tus juegos...",
-      "sound_cue": "Hit the 'NEL' hook at 0:28 right as the on-screen text delivers the deadpan rejection punchline."
-    },
-    {
-      "track_id": "frzr-sabor-fresa",
-      "artist": "Fuerza Regida",
-      "title": "SABOR FRESA",
-      "status": "catalog_revival",
-      "vibe_tags": ["flex", "luxury", "car", "trokiando", "lifestyle", "summer", "vibe", "aesthetic", "chill"],
-      "format_archetypes": ["car_edit", "lifestyle_montage", "soft_flex_pov", "couple_vibe"],
-      "clip_timestamp": "0:18-0:33 (requinto into vocal entry)",
-      "hook_lyric": "Estilo de vida caro, vibra pesada...",
-      "sound_cue": "Open on the requinto intro at 0:18 with slow-pan car/lifestyle footage and cut on the vocal entry at 0:23."
-    },
-    {
-      "track_id": "frzr-bebe-dame",
-      "artist": "Fuerza Regida & Grupo Frontera",
-      "title": "Bebe Dame",
-      "status": "catalog_revival",
-      "vibe_tags": ["romance", "couple", "longing", "cumbia", "dance", "nostalgia", "wholesome", "family"],
-      "format_archetypes": ["couple_pov", "dance_trend", "throwback_edit", "wholesome_meme"],
-      "clip_timestamp": "0:36-0:51 (chorus)",
-      "hook_lyric": "Bebe dame otra oportunidad...",
-      "sound_cue": "Layer the 0:36 chorus over relatable couple/family humor or throwback photo carousels."
-    },
-    {
-      "track_id": "chpc-gordo-mando",
-      "artist": "Chino Pacas",
-      "title": "El Gordo Trae El Mando",
-      "status": "catalog_revival",
-      "vibe_tags": ["hustle", "gym", "sports", "win", "boss", "flex", "corrido_belico", "truck", "grit"],
-      "format_archetypes": ["gym_pr_edit", "sports_highlight", "hustle_montage", "trokiando_edit"],
-      "clip_timestamp": "0:14-0:29 (bass + brass hit)",
-      "hook_lyric": "Y puro Street Mob...",
-      "sound_cue": "Drop at 0:14 on the heavy bass hit for sports highlights, gym PRs, or truck/car reveal cuts."
-    },
-    {
-      "track_id": "cl24-que-onda",
-      "artist": "Calle 24 x Chino Pacas x Fuerza Regida",
-      "title": "Que Onda",
-      "status": "priority_push",
-      "vibe_tags": ["late_night", "texting", "situationship", "vibe", "chill", "night_drive", "relatable", "spanglish"],
-      "format_archetypes": ["late_night_text_pov", "car_interior_pov", "storytime", "audio_flip"],
-      "clip_timestamp": "0:22-0:37 (chorus)",
-      "hook_lyric": "Que onda, dime que vamos a hacer...",
-      "sound_cue": "Use 0:22 under late-night drive / '2am text you shouldn't send' POV templates to trigger group-chat shares."
+      "vibe_tags": ["flirt", "party", "dance", "cumbia", "couple", "grwm", "summer", "vibe"],
+      "format_archetypes": ["dance_trend", "flirt_pov", "grwm_transition", "couple_pov"],
+      "clip_timestamp": "Chorus drop (15s)",
+      "sound_cue": "Use 'Chula Vente' for upbeat flirt/dance transitions and couple night-out videos."
     }
   ]
 }

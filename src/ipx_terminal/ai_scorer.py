@@ -172,20 +172,36 @@ def _fallback_brief_template(
             title = track.get("title") or "Priority Track"
             clip_ts = track.get("clip_timestamp") or "chorus drop"
             sound_cue = track.get("sound_cue") or f"Drop {artist} — '{title}' at {clip_ts}."
+            faceless = str(project.get("production_mode") or "") == "faceless_at_scale"
+            prod_fmt = "clip_flip_meme" if faceless else "standard_short"
+            asset_recipe = (
+                f"Source existing viral {ent} / anime / street-car clip or WhatsApp POV screenshot (zero IRL filming); "
+                f"drop into CapCut beat-sync template and cut hard on '{title}' ({clip_ts})."
+                if faceless
+                else ""
+            )
             return {
                 "model_used": "template_draft",
                 "target_platform": target_platform,
                 "project_id": project.get("id"),
                 "matched_track": f"{artist} — {title}",
-                "angle": f"[{proj_name}] Audio-flip '{title}' ({artist}) onto the {ent} format",
-                "hook_2s": f"Cold open on relatable {ent} POV setup (0.0-1.5s) cutting straight into '{title}' at {clip_ts}.",
+                "production_format": prod_fmt,
+                "asset_recipe": asset_recipe,
+                "angle": f"[{proj_name} · {prod_fmt}] Faceless audio-flip '{title}' ({artist}) onto the {ent} format"
+                if faceless
+                else f"[{proj_name}] Audio-flip '{title}' ({artist}) onto the {ent} format",
+                "hook_2s": (
+                    f"Faceless cold open on viral {ent} clip / screenshot (0.0-1.5s) cutting straight into '{title}' at {clip_ts}."
+                    if faceless
+                    else f"Cold open on relatable {ent} POV setup (0.0-1.5s) cutting straight into '{title}' at {clip_ts}."
+                ),
                 "on_screen_text": f"POV: cuando pasa esto y suena {title}...",
                 "caption": f"{sample[:95]} — {artist} '{title}' ({proj_name})",
                 "edit_beats": [
-                    "0.0-1.8s: Relatable POV text lock matching the emerging trend format",
-                    f"1.8-5.0s: Build tension right before '{title}' ({clip_ts}) hits",
+                    f"0.0-1.8s: [{prod_fmt}] Found-clip / AI-visual scroll-stop + Spanish/Spanglish POV text lock",
+                    f"1.8-5.0s: Build tension with rapid 0.8s cuts right before '{title}' ({clip_ts}) hits",
                     f"5.0-9.0s: Beat-drop punchline synced to {artist} — '{title}' for 'Use This Sound' remakes",
-                    "9.0-11.0s: Clean seamless loop back into frame 1",
+                    "9.0-11.0s: Clean seamless loop back into frame 1 (no filming, 100% replicable at scale)",
                 ],
                 "audio_cue": f"{artist} — '{title}' [{clip_ts}]: {sound_cue}",
             }
@@ -240,10 +256,23 @@ def generate_creative_brief(
             }
             for t in candidates
         ]
+        prod_constraints = project.get("production_constraints") or {}
+        faceless_rules = ""
+        if str(project.get("production_mode") or "") == "faceless_at_scale" or prod_constraints:
+            faceless_rules = (
+                f"PRODUCTION CONSTRAINT (STRICT — FACELESS AT SCALE): We run faceless accounts at scale with NO physical "
+                f"on-camera person or IRL filming crew. Allowed formats ONLY: {prod_constraints.get('allowed_formats')}. "
+                f"BANNED: {prod_constraints.get('banned_formats')} (never suggest filming a person, GRWM camera shoot, or IRL actors). "
+                f"Visual sources: {prod_constraints.get('visual_sources')}\n"
+                "Also return two extra JSON keys: 'production_format' (one of the allowed_formats) and "
+                "'asset_recipe' (exact online clip/meme search query, WhatsApp/carousel layout, OR ready-to-paste AI video/image prompt "
+                "so an editor can produce 10 variations in minutes).\n"
+            )
         project_block = (
             f"\nClient Project: {project.get('name')} (Label: {project.get('label_name')})\n"
             f"Languages / Voice: {project.get('languages')} | {project.get('brand_voice')}\n"
             f"Target US/MX Geos: {project.get('target_geos')}\n"
+            f"{faceless_rules}"
             f"Best-Fit Client Catalog Tracks to Seed:\n{json.dumps(compact_tracks, ensure_ascii=False)}\n"
             "IMPORTANT: Pick the single strongest matching track from the Client Catalog above, localize/adapt "
             "the trend format natively into the client's voice (Spanish or natural Spanglish), and put the exact "
@@ -312,6 +341,10 @@ def generate_creative_brief(
             out["project_id"] = project.get("id")
             if top_track_label:
                 out["matched_track"] = top_track_label
+            if parsed.get("production_format"):
+                out["production_format"] = str(parsed.get("production_format")).strip()
+            if parsed.get("asset_recipe"):
+                out["asset_recipe"] = str(parsed.get("asset_recipe")).strip()
         return out
     except Exception:
         return _fallback_brief_template(signal, target_platform, project=project)
