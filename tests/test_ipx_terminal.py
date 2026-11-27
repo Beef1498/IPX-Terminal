@@ -754,7 +754,7 @@ class TestIPXTerminal(unittest.TestCase):
         brief_html = render_client_brief_html(self.db, project=proj)
         self.assertIn("Fuerza Regida / Street Mob Records", brief_html)
         self.assertIn("FACELESS AT SCALE", brief_html)
-        self.assertIn("Print / Save as PDF", brief_html)
+        self.assertIn("Download Brief (.html)", brief_html)
 
 
 if __name__ == "__main__":

@@ -275,6 +275,10 @@ def render_client_brief_html(
             f'</section>'
         )
 
+    proj_id_str = str(project.get("id") or "").strip() if project else ""
+    dl_href = f"/api/quant/export-brief.html?project_id={e(proj_id_str)}&download=1" if proj_id_str else "/api/quant/export-brief.html?download=1"
+    dl_name = f"ipx_brief_{e(proj_id_str)}.html" if proj_id_str else "ipx_executive_brief.html"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -408,7 +412,10 @@ def render_client_brief_html(
         <span class="badge badge-muted">{e(proj_label)}</span>
         {faceless_badge}
       </div>
-      <button type="button" class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <a class="btn-print" href="{dl_href}" download="{dl_name}" style="text-decoration:none">⬇ Download Brief (.html)</a>
+        <button type="button" class="btn-print" onclick="window.print()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155">🖨 Print / PDF</button>
+      </div>
     </div>
 
     <div class="hero">
