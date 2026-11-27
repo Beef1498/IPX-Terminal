@@ -10,6 +10,7 @@ const hubState = {
   quant: null,
   quantSectorFilter: "ALL",
   quantFlagFilter: "ALL",
+  quantProjectOnly: false,
   quantMinShare: 0,
   quantMinBreakout: 0,
   quantSortBy: "alpha_score",
@@ -178,8 +179,11 @@ function renderQuantView() {
   if (!el || !q) return;
 
   const s = q.summary || {};
+  const activeProj = typeof getActiveProject === "function" ? getActiveProject() : null;
+  const projTickers = new Set((activeProj?.roster_entities || []).map((e) => String(e.ticker || "").toUpperCase()));
   const allRows = q.screener || [];
   const filtered = allRows
+    .filter((r) => !hubState.quantProjectOnly || !activeProj || projTickers.has(String(r.ticker || "").toUpperCase()) || r.sector === "MUSIC" || r.sector === "POP")
     .filter((r) => hubState.quantSectorFilter === "ALL" || r.sector === hubState.quantSectorFilter)
     .filter((r) => hubState.quantFlagFilter === "ALL" || r.signal_flag === hubState.quantFlagFilter)
     .filter((r) => Number(r.share_to_like_pct || 0) >= Number(hubState.quantMinShare || 0))
@@ -258,6 +262,48 @@ function renderQuantView() {
       </div>
 
       ${(() => {
+        if (!activeProj) return "";
+        const rosterHtml = (activeProj.roster_entities || [])
+          .map(
+            (e) =>
+              `<button type="button" class="btn-action" data-quant-jump="${esc(e.ticker)}" style="padding:3px 8px;font-family:monospace;color:#22d3ee;border-color:rgba(34,211,238,0.35)">${esc(e.ticker)} · ${esc(e.name)}</button>`
+          )
+          .join("");
+        const tracksHtml = (activeProj.catalog_tracks || [])
+          .map((t) => {
+            const st = String(t.status || "").toLowerCase() === "priority_push";
+            return `<tr>
+              <td style="font-weight:700;color:#f8fafc">${esc(t.title)}</td>
+              <td style="color:#cbd5e1">${esc(t.artist)}</td>
+              <td><span class="pill ${st ? "green" : "amber"}">${st ? "PRIORITY PUSH" : "CATALOG REVIVAL"}</span></td>
+              <td style="font-family:monospace;font-size:11px;color:#22d3ee">${esc(t.clip_timestamp || "--")}</td>
+              <td style="font-size:11px;color:#94a3b8">${(t.vibe_tags || []).slice(0, 5).map((v) => `<span class="pill" style="margin-right:3px">${esc(v)}</span>`).join("")}</td>
+            </tr>`;
+          })
+          .join("");
+        return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(34,211,238,0.45)">
+          <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+            <span>★ CLIENT PROJECT // ${esc((activeProj.name || activeProj.id).toUpperCase())}</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span class="pill cyan">${esc((activeProj.languages || []).join(" / "))}</span>
+              <span class="pill">${(activeProj.priority_niches || []).length} Priority Niches</span>
+              <span class="pill">${(activeProj.target_geos || []).slice(0, 6).join(", ")}</span>
+              <button type="button" class="btn-action cyan" id="btn-seed-active-project" style="padding:2px 8px;font-size:10.5px">Seed Roster</button>
+            </div>
+          </div>
+          <div class="hub-card-body">
+            <div style="font-size:11.5px;color:#94a3b8;margin-bottom:8px">${esc(activeProj.brand_voice || "")}</div>
+            ${rosterHtml ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${rosterHtml}</div>` : ""}
+            ${
+              tracksHtml
+                ? `<div style="overflow-x:auto"><table class="hub-table"><thead><tr><th>TRACK</th><th>ARTIST</th><th>STATUS</th><th>15S AUDIO CUE</th><th>VIBE / TREND TAGS</th></tr></thead><tbody>${tracksHtml}</tbody></table></div>`
+                : ""
+            }
+          </div>
+        </div>`;
+      })()}
+
+      ${(() => {
         const m = q.latest_memo;
         if (!m) {
           return `<div class="hub-card" style="margin-bottom:14px;border-color:rgba(251,113,133,0.35)">
@@ -312,6 +358,11 @@ function renderQuantView() {
         <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
           <span>MULTI-FACTOR SCREENER (${filtered.length} / ${allRows.length})</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${
+              activeProj
+                ? `<button type="button" class="btn-action ${hubState.quantProjectOnly ? "cyan" : ""}" id="q-proj-only" style="padding:3px 8px;font-size:10.5px">${hubState.quantProjectOnly ? `★ ${esc(activeProj.id)} Focus: ON` : `★ ${esc(activeProj.id)} Focus: OFF`}</button>`
+                : ""
+            }
             <select id="q-sector" class="hub-filter-select">
               ${["ALL", "POP", "MUSIC", "FILM_TV", "GAMING", "CREATORS", "SPORTS", "DEALS"].map((x) => `<option value="${x}" ${hubState.quantSectorFilter === x ? "selected" : ""}>Sector: ${x}</option>`).join("")}
             </select>
@@ -426,7 +477,11 @@ function renderQuantView() {
     btn.textContent = mode === "morning" ? "Running Pro Quant..." : "Running Flash-Lite...";
     setStatus(`Running Gemini Quant (${mode})...`);
     try {
-      const res = await api("/api/quant/run", { method: "POST", body: JSON.stringify({ mode }) });
+      const projId = typeof state !== "undefined" ? state.activeProjectId : null;
+      const res = await api("/api/quant/run", {
+        method: "POST",
+        body: JSON.stringify({ mode, project_id: projId && projId !== "NONE" ? projId : null }),
+      });
       setStatus(`Gemini Quant (${res.memo.model_used}) complete: ${res.memo.headline}`);
       await loadQuant();
     } catch (err) {
@@ -447,6 +502,26 @@ function renderQuantView() {
     state.activeTab = "MAP";
     renderDesk();
   });
+  const seedProjBtn = document.getElementById("btn-seed-active-project");
+  if (seedProjBtn && activeProj) {
+    seedProjBtn.addEventListener("click", async () => {
+      try {
+        const res = await api(`/api/projects/${encodeURIComponent(activeProj.id)}/seed`, { method: "POST", body: "{}" });
+        setStatus(`Seeded ${res.seeded_count} roster entities for ${res.project_name}`);
+        await loadBootstrap(true);
+        await loadQuant();
+      } catch (err) {
+        setStatus(`Seed failed: ${err.message}`, true);
+      }
+    });
+  }
+  const projOnlyBtn = document.getElementById("q-proj-only");
+  if (projOnlyBtn) {
+    projOnlyBtn.addEventListener("click", () => {
+      hubState.quantProjectOnly = !hubState.quantProjectOnly;
+      renderQuantView();
+    });
+  }
   document.getElementById("q-sector").addEventListener("change", (e) => { hubState.quantSectorFilter = e.target.value; renderQuantView(); });
   document.getElementById("q-flag").addEventListener("change", (e) => { hubState.quantFlagFilter = e.target.value; renderQuantView(); });
   document.getElementById("q-min-share").addEventListener("change", (e) => { hubState.quantMinShare = Number(e.target.value); renderQuantView(); });

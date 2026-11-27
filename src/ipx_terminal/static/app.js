@@ -9,6 +9,8 @@ const state = {
   predictions: [],
   briefs: [],
   entities: [],
+  projects: [],
+  activeProjectId: localStorage.getItem("ipx_active_project") || "",
   activeTicker: null,
   tickerDetail: null,
   activeTab: "DES",
@@ -74,7 +76,13 @@ async function loadBootstrap(preserveTicker = true) {
   state.predictions = data.predictions;
   state.briefs = data.briefs || [];
   state.entities = data.entities;
+  state.projects = data.projects || [];
+  if (!state.activeProjectId) {
+    const prim = state.projects.find((p) => p.active !== false && p.primary) || state.projects[0];
+    state.activeProjectId = prim ? prim.id : "NONE";
+  }
 
+  renderProjectSelector();
   renderKpis();
   renderSectorKeys();
   renderMovers();
@@ -100,6 +108,40 @@ async function selectTicker(ticker, announce = true) {
   renderGP();
   renderDesk();
   if (announce) setStatus(`Loaded ${ticker} — ${state.tickerDetail.entity.name}`);
+}
+
+function getActiveProject() {
+  if (!state.activeProjectId || state.activeProjectId === "NONE") return null;
+  return (state.projects || []).find((p) => p.id === state.activeProjectId) || null;
+}
+
+function renderProjectSelector() {
+  const sel = document.getElementById("project-select");
+  if (!sel) return;
+  const opts = [
+    `<option value="NONE"${state.activeProjectId === "NONE" ? " selected" : ""}>Client: All (General)</option>`,
+    ...(state.projects || []).map(
+      (p) =>
+        `<option value="${esc(p.id)}"${state.activeProjectId === p.id ? " selected" : ""}>★ Client: ${esc(p.name || p.id)}</option>`
+    ),
+  ];
+  sel.innerHTML = opts.join("");
+  if (!sel.dataset.bound) {
+    sel.dataset.bound = "1";
+    sel.addEventListener("change", () => {
+      state.activeProjectId = sel.value || "NONE";
+      localStorage.setItem("ipx_active_project", state.activeProjectId);
+      const proj = getActiveProject();
+      setStatus(
+        proj
+          ? `Active client project: ${proj.name} (${(proj.catalog_tracks || []).length} catalog tracks ready for song-seeding)`
+          : "Switched to General IPX view (no client project filter)."
+      );
+      if (typeof renderQuantView === "function" && typeof hubState !== "undefined" && hubState.quant) {
+        renderQuantView();
+      }
+    });
+  }
 }
 
 function renderKpis() {
@@ -979,19 +1021,31 @@ function openAutoAbModal() {
 }
 
 function openCreateBriefModal(signal) {
+  const projOptions = [
+    `<option value="NONE"${state.activeProjectId === "NONE" ? " selected" : ""}>None (General Format)</option>`,
+    ...(state.projects || []).map(
+      (p) =>
+        `<option value="${esc(p.id)}"${state.activeProjectId === p.id ? " selected" : ""}>★ ${esc(p.name || p.id)}</option>`
+    ),
+  ].join("");
   openModal(
     `GENERATE CREATIVE BRIEF // ${signal.ticker} (SIGNAL #${signal.id})`,
     `
     <form id="form-brief">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <div style="display:flex;gap:6px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <label style="font-family:monospace;font-size:10.5px;color:#8b9bb0">PLATFORM</label>
           <select name="target_platform" id="brief-platform" style="background:#070a0f;border:1px solid #2b384b;color:#e6edf5;padding:4px 8px;border-radius:3px">
             <option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>X</option><option>Facebook Reels</option>
           </select>
+          <label style="font-family:monospace;font-size:10.5px;color:#22d3ee">CLIENT</label>
+          <select name="project_id" id="brief-project" style="background:#070a0f;border:1px solid rgba(34,211,238,0.45);color:#22d3ee;padding:4px 8px;border-radius:3px">
+            ${projOptions}
+          </select>
         </div>
         <button type="button" class="btn-action cyan" id="btn-gen-brief">Auto-Draft Brief</button>
       </div>
+      <div id="brief-matched-track" style="display:none;margin-bottom:8px;padding:6px 10px;border-radius:4px;background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.35);font-size:11.5px;color:#22d3ee"></div>
       <input type="hidden" name="model_used" id="brief-model" value="manual" />
       <div class="form-grid">
         <div class="form-row full"><label>CULTURAL ANGLE</label><input name="angle" id="brief-angle" required placeholder="What makes this native & shareable right now?" /></div>
@@ -1011,11 +1065,12 @@ function openCreateBriefModal(signal) {
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
   const runAutoDraft = async () => {
     const plat = document.getElementById("brief-platform").value;
-    setStatus(`Drafting ${plat} Creative Brief for ${signal.ticker}...`);
+    const projId = document.getElementById("brief-project").value;
+    setStatus(`Drafting ${plat} Creative Brief for ${signal.ticker}${projId !== "NONE" ? ` (${projId})` : ""}...`);
     try {
       const res = await api("/api/briefs/generate", {
         method: "POST",
-        body: JSON.stringify({ signal_id: signal.id, target_platform: plat }),
+        body: JSON.stringify({ signal_id: signal.id, target_platform: plat, project_id: projId }),
       });
       const d = res.draft;
       document.getElementById("brief-model").value = d.model_used || "template_draft";
@@ -1025,12 +1080,20 @@ function openCreateBriefModal(signal) {
       document.getElementById("brief-caption").value = d.caption || "";
       document.getElementById("brief-beats").value = (d.edit_beats || []).join("\n");
       document.getElementById("brief-audio").value = d.audio_cue || "";
+      const matchEl = document.getElementById("brief-matched-track");
+      if (d.matched_track) {
+        matchEl.style.display = "block";
+        matchEl.innerHTML = `🎵 <b>Matched Catalog Track:</b> ${esc(d.matched_track)}`;
+      } else {
+        matchEl.style.display = "none";
+      }
       setStatus(`Drafted brief (${d.model_used}) — tweak to taste and click Save.`);
     } catch (err) {
       setStatus(err.message, true);
     }
   };
   document.getElementById("btn-gen-brief").addEventListener("click", runAutoDraft);
+  document.getElementById("brief-project").addEventListener("change", runAutoDraft);
   runAutoDraft();
 
   document.getElementById("form-brief").addEventListener("submit", async (e) => {

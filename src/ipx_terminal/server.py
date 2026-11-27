@@ -197,6 +197,8 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     return
 
                 if path == "/api/bootstrap":
+                    from ipx_terminal.projects import list_projects
+
                     sector = qs.get("sector", ["ALL"])[0]
                     movers = db.get_top_movers(sector=None if sector == "ALL" else sector)
                     self._send_json(
@@ -221,6 +223,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                             "predictions": db.list_predictions(limit=60),
                             "briefs": db.list_briefs(limit=40),
                             "entities": db.list_entities(),
+                            "projects": list_projects(),
                         }
                     )
                     return
@@ -252,6 +255,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     return
 
                 if path == "/api/quant":
+                    from ipx_terminal.projects import list_projects
                     from ipx_terminal.quant_agent import list_quant_memos
 
                     memos = list_quant_memos(limit=5)
@@ -261,6 +265,7 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                             **build_quant_workspace(db),
                             "latest_memo": memos[0] if memos else None,
                             "memos_count": len(memos),
+                            "projects": list_projects(),
                         }
                     )
                     return
@@ -604,7 +609,10 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                         self._send_json({"error": "Signal not found"}, status=HTTPStatus.NOT_FOUND)
                         return
                     proj_id = body.get("project_id")
-                    proj = get_project(str(proj_id)) if proj_id else get_default_active_project()
+                    if str(proj_id or "").upper() == "NONE":
+                        proj = None
+                    else:
+                        proj = get_project(str(proj_id)) if proj_id else get_default_active_project()
                     draft = generate_creative_brief(
                         signal=sig,
                         target_platform=str(body.get("target_platform", "TikTok")),
@@ -678,12 +686,15 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                 if path == "/api/quant/run":
                     from ipx_terminal.quant_agent import run_gemini_quant
 
+                    proj_raw = body.get("project_id")
+                    proj_id = None if (not proj_raw or str(proj_raw).upper() == "NONE") else str(proj_raw)
                     memo = run_gemini_quant(
                         db=db,
                         mode=str(body.get("mode", "morning")),
                         model=body.get("model") or None,
                         dry_run=bool(body.get("dry_run", False)),
                         max_calls=int(body.get("max_calls", 2)),
+                        project_id=proj_id,
                     )
                     self._send_json({"ok": True, "memo": memo}, status=HTTPStatus.CREATED)
                     return
