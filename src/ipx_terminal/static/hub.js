@@ -254,6 +254,7 @@ function renderQuantView() {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="btn-action" id="btn-run-quant-morning" style="border-color:#fb7185;color:#fb7185">⚡ Run Gemini Quant (Pro)</button>
           <button type="button" class="btn-action cyan" id="btn-run-quant-intraday">⚡ Intraday Scout (Flash-Lite)</button>
+          <a class="btn-action" id="btn-export-brief-html" href="/api/quant/export-brief.html${activeProj ? `?project_id=${encodeURIComponent(activeProj.id)}` : ""}" target="_blank" rel="noopener" style="text-decoration:none;border-color:#a78bfa;color:#c4b5fd">📄 Visual Brief (HTML/PDF)</a>
           <a class="btn-action green" href="/api/quant/export.csv" download="ipx_quant_factors.csv" style="text-decoration:none">⬇ Export CSV</a>
           <button type="button" class="btn-action" id="btn-quant-open-mkts">MKTS</button>
           <button type="button" class="btn-action amber" id="btn-quant-open-map">US MAP</button>

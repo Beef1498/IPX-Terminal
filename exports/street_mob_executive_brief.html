@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IPX Executive Brief — Fuerza Regida / Street Mob Records</title>
+<style>
+  :root {
+    --bg: #0b1019;
+    --card: #121a27;
+    --border: #233146;
+    --text: #e6edf5;
+    --muted: #94a3b8;
+    --cyan: #22d3ee;
+    --green: #34d399;
+    --amber: #f59e0b;
+    --rose: #fb7185;
+    --purple: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    padding: 28px 20px 60px;
+  }
+  .page { max-width: 1020px; margin: 0 auto; }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .brand-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .logo {
+    background: linear-gradient(135deg, #22d3ee, #34d399);
+    color: #071018; font-weight: 900; font-family: monospace;
+    padding: 4px 10px; border-radius: 6px; letter-spacing: 1px; font-size: 13px;
+  }
+  .btn-print {
+    background: var(--cyan); color: #061018; border: none; border-radius: 6px;
+    padding: 8px 16px; font-weight: 700; font-size: 12.5px; cursor: pointer;
+  }
+  .btn-print:hover { opacity: 0.9; }
+  .hero {
+    background: linear-gradient(135deg, rgba(34,211,238,0.10), rgba(167,139,250,0.08));
+    border: 1px solid rgba(34,211,238,0.35); border-radius: 12px; padding: 22px 24px; margin-bottom: 18px;
+  }
+  .hero-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 11.5px; color: var(--muted); }
+  .hero h1 { margin: 0 0 10px; font-size: 21px; line-height: 1.3; color: #f8fafc; }
+  .hero p { margin: 0; font-size: 14px; color: #cbd5e1; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .kpi {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  }
+  .kpi-label { font-family: monospace; font-size: 10.5px; color: var(--muted); letter-spacing: 0.5px; }
+  .kpi-val { font-size: 24px; font-weight: 800; margin-top: 4px; }
+  .section { margin-bottom: 22px; }
+  .section-title {
+    font-family: monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+    color: var(--cyan); margin-bottom: 10px; text-transform: uppercase;
+  }
+  .signal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .signal-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  }
+  .signal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .signal-thesis { margin: 0; font-size: 13px; color: #cbd5e1; }
+  .brief-card {
+    background: var(--card); border: 1px solid rgba(34,211,238,0.28); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 12px; break-inside: avoid;
+  }
+  .brief-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .brief-angle { font-size: 15px; font-weight: 700; color: #f8fafc; margin-bottom: 10px; }
+  .brief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .field-label { font-family: monospace; font-size: 10px; color: var(--muted); letter-spacing: 0.6px; margin-bottom: 3px; }
+  .field-val { font-size: 13px; color: #e2e8f0; }
+  .ost { font-weight: 700; color: var(--amber); }
+  .audio-box {
+    background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.25);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; color: #e0f2fe;
+  }
+  .beats-box ol { margin: 4px 0 10px; padding-left: 18px; font-size: 12.5px; color: #cbd5e1; }
+  .beats-box li { margin-bottom: 3px; }
+  .caption-line { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; }
+  .ticker { font-family: monospace; font-weight: 800; color: var(--cyan); font-size: 13px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-family: monospace;
+    font-size: 10.5px; font-weight: 700; border: 1px solid var(--border);
+  }
+  .badge-green { background: rgba(52,211,153,0.16); color: var(--green); border-color: rgba(52,211,153,0.45); }
+  .badge-cyan { background: rgba(34,211,238,0.14); color: var(--cyan); border-color: rgba(34,211,238,0.4); }
+  .badge-amber { background: rgba(245,158,11,0.16); color: var(--amber); border-color: rgba(245,158,11,0.45); }
+  .badge-purple { background: rgba(167,139,250,0.16); color: var(--purple); border-color: rgba(167,139,250,0.45); }
+  .badge-muted { background: rgba(148,163,184,0.12); color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 12.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { font-family: monospace; font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,0.02); }
+  .num { text-align: right; font-family: monospace; }
+  .mono { font-family: monospace; }
+  .strong { font-weight: 700; }
+  .track-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+  .track-pill { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .track-title { font-size: 12.5px; font-weight: 700; color: #f8fafc; display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+  .track-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  @media (max-width: 700px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .brief-grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { background: #ffffff; color: #0f172a; padding: 0; }
+    .toolbar { display: none; }
+    .hero, .kpi, .signal-card, .brief-card, table, .track-pill {
+      background: #ffffff !important; border-color: #cbd5e1 !important; color: #0f172a !important;
+    }
+    .hero h1, .brief-angle, .track-title { color: #0f172a !important; }
+    .hero p, .signal-thesis, .field-val, .beats-box ol, .caption-line { color: #334155 !important; }
+    .audio-box { background: #f1f5f9 !important; color: #0f172a !important; border-color: #94a3b8 !important; }
+    .ticker, .section-title { color: #0369a1 !important; }
+    .ost { color: #b45309 !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div class="brand-row">
+        <span class="logo">IPX TERMINAL</span>
+        <span style="font-weight:700;font-size:14px">Fuerza Regida / Street Mob Records</span>
+        <span class="badge badge-muted">Street Mob Records</span>
+        <span class="badge badge-green">FACELESS AT SCALE</span>
+      </div>
+      <button type="button" class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+    </div>
+
+    <div class="hero">
+      <div class="hero-meta">
+        <span>GENERATED: <b>2026-11-27T20:04:18Z</b></span>
+        <span>·</span>
+        <span>LANGUAGES: <b>es / en-es</b></span>
+        <span>·</span>
+        <span>TARGET GEOS: <b>CA, TX, AZ, NV, IL, NM, CO, NY</b></span>
+      </div>
+      <h1>IPX Terminal Desk Memo: Capitalizing on US Sports Contagion and Creator Formats for Fuerza Regida / Street Mob Records</h1>
+      <p>Cross-referencing high-velocity US contagion clusters (Broncos-Steelers and regional football matchups) alongside creator formatting templates (Katt Williams cutout capcut and Pubity pop culture items) provides Street Mob Records an immediate opening to audio-flip trending moments into high-retention Regional Mexican short-form edits. Utilizing faceless execution—such as trokiando car loops, GTA/anime aesthetics, and iMessage text slide carousels—guarantees maximum engagement across key southwest and national markets without requiring on-camera talent.</p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">STRONG SIGNALS</div><div class="kpi-val" style="color:var(--green)">9</div></div>
+      <div class="kpi"><div class="kpi-label">TRACKED TICKERS</div><div class="kpi-val" style="color:var(--cyan)">37</div></div>
+      <div class="kpi"><div class="kpi-label">QUANT HIT RATE</div><div class="kpi-val" style="color:var(--purple)">100.0%</div></div>
+      <div class="kpi"><div class="kpi-label">BRIER CALIBRATION</div><div class="kpi-val" style="color:var(--amber)">98.1%</div></div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">TOP ACTIONABLE TREND → SONG PLAYBOOKS</div>
+      <div class="signal-grid"><div class="signal-card"><div class="signal-head"><span class="ticker">HOUSE.SP</span><span class="badge badge-green">STRONG_SIGNAL</span></div><p class="signal-thesis">With Instagram Reels and TikTok sports loops surging at a 50.56% breakout ratio, Street Mob can audio-flip viral sports collapse and flex clips using &#x27;Olimpo&#x27; or &#x27;Crazyz&#x27; to target fans in CA, TX, and NV through high-energy faceless edits.</p></div><div class="signal-card"><div class="signal-head"><span class="ticker">KATT.FMT</span><span class="badge badge-green">STRONG_SIGNAL</span></div><p class="signal-thesis">Katt Williams CapCut cutout formats are generating massive share-to-like ratios (44.9%). Deploying faceless meme slideshows and iMessage chat POVs paired with the deadpan humor of &#x27;PUES YA NI PEDO&#x27; or &#x27;Tu Sancho&#x27; maximizes relatable Latin comedy loops.</p></div><div class="signal-card"><div class="signal-head"><span class="ticker">CORRI.FT</span><span class="badge badge-green">STRONG_SIGNAL</span></div><p class="signal-thesis">Corridor Crew&#x27;s VFX and behind-the-scenes breakdown formats indicate robust audience appetite for meticulous visual editing (46.52% breakout ratio). Street Mob can leverage this by pairing cinematic car/trokiando edits and night drives with the gritty street pulse of &#x27;Suzuki&#x27; or &#x27;Como Capo&#x27;.</p></div><div class="signal-card"><div class="signal-head"><span class="ticker">GENIU.MU</span><span class="badge badge-green">STRONG_SIGNAL</span></div><p class="signal-thesis">Genius lyric breakdowns and cultural music commentary continue to dominate echo chambers. Street Mob should seed lyric-card carousels for tracks like &#x27;Tu Boda&#x27; and &#x27;Marlboro Rojo&#x27; targeting overthinking and desamor POVs across key diaspora hubs in NY, FL, and IL.</p></div></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">READY-TO-PRODUCE CREATIVE BRIEFS (6)</div>
+      <div class="brief-card"><div class="brief-head"><div><span class="ticker">GENIU.MU</span> <span class="badge badge-purple">TikTok</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">WhatsApp chat POV where a hating ex or friend doubts the come-up, immediately cutting to a hard trokiando/car night drive flex synced to the track drop.</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">Screen recording of a dry, toxic text notification opening up on a late-night dashboard view.</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"&quot;dijeron que no ibamos a salir del barrio...&quot;"</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Start track &#x27;Olimpo&#x27; by Fuerza Regida / Street Mob Records right at 0.0s underneath the text, letting the heavy brass/string intro build tension until the hard chorus drop hits at 2.5s. Viewers will tap &#x27;Use This Sound&#x27; to flex their own car builds, night drives, or come-up moments.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0s: WhatsApp notification pop-up of the hating text message</li><li>1.2s: Quick cut to dashboard night-drive view accelerating on the 10 freeway</li><li>2.5s: Heavy bass drop on &#x27;Olimpo&#x27; hits right as the truck passes streetlights in a blur</li><li>4.0s: Slow-motion exterior roll of a lowered truck or sports car merging smoothly</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> pura gente seria 🏁 #fuerzaregida #trokiando #inlandempire #hustle #fyp</div></div><div class="brief-card"><div class="brief-head"><div><span class="ticker">PUBIT.PP</span> <span class="badge badge-purple">TikTok</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">absurdist pop-culture fact paired with a heavy regional-mexican flex or night-drive edit, turning random hyper-fixations into an instant mood template</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">rapid-fire text zoom on an absurd celebrity belief over a dark, moody cinematic loop before the beat slams</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"me finding out random millionaires believe in goats instead of fixing their life"</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Start track &#x27;Olimpo&#x27; by Fuerza Regida / Street Mob at 15s peak (Chorus drop). The heavy brass and requinto hit right as the visual flex or funny comparison lands, triggering viewers to tap &#x27;Use This Sound&#x27; for their own hyper-fixation or hustle edits.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0s: text snaps onto screen over grainy low-exposure clip</li><li>0.8s: quick zoom-in on the punchline text &#x27;pass it on&#x27;</li><li>1.5s: hard cut to black</li><li>1.8s: bass drops into the track, flashing high-contrast visual or car clip</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> el compa solo necesitaba una señal de las vieja escuela 🐐🇲🇽 #fuerzaregida #chisme #poppulse #hustle</div></div><div class="brief-card"><div class="brief-head"><div><span class="ticker">COLIN.CR</span> <span class="badge badge-purple">Instagram Reels</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">POV de cuando por fin dejas atrás a los que no creían y sacas la troca del año.</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">Hard cut to a clean, slow-mo close-up of a truck grill or key fob clicking, matching the exact beat impact of the track.</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"Yo solito me armé, nadie me regaló nada."</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Track: Olimpo by Fuerza Regida / Street Mob Records. Timestamp: Chorus drop (15s peak). Start the clip right on the heavy brass and tololoche beat drop to make creators want to use this sound for any high-end flex, car build, or hustle edit.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0s: Cold open on the key fob click or engine start, no music yet</li><li>0.8s: Quick pan to the front wheel or side profile as bass swells</li><li>1.5s: HARD DROP on &#x27;Olimpo&#x27; chorus—instant cut to wide rolling shot on the highway at night</li><li>4.5s: Quick snap zoom on the dashboard or rearview mirror as lights streak by</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> el que entendió, entendió 😮‍💨 @fuerzaregida #trokiando #fuerzaregida #fyp</div></div><div class="brief-card"><div class="brief-head"><div><span class="ticker">CORRI.FT</span> <span class="badge badge-purple">YouTube Shorts</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">Car &amp; build transition edit utilizing heavy regional Mexican brass and beat drops to showcase hyper-customized trucks, street builds, and late-night LA/IE highway runs.</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">Fast-paced assembly montage of a custom truck build cutting instantly to a hard nighttime highway flyby.</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"gastando lo de la renta en piezas otra vez"</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Track: &#x27;Suzuki&#x27; by Fuerza Regida / Street Mob (Clip timestamp: Hook drop 15s peak). Drop the heavy brass right on the transition to the highway rolling shot to make creators want to use this sound for their own car and truck edits.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0s: Cold cut to garage jack setup</li><li>0.8s: Quick snap zoom to engine bay detail</li><li>1.5s: Heavy bass hit - hard cut to night highway rolling shot</li><li>3.2s: Chorus drop - continuous motion drift/rev sequence</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> el amor de su vida es una troca arreglada 😮‍💨 #trokiando #fuerzaregida #streetmob #trucklife #inlandempire</div></div><div class="brief-card"><div class="brief-head"><div><span class="ticker">JOMBO.SP</span> <span class="badge badge-purple">YouTube Shorts</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">Lip-reading the exact chaotic second a manager gets tossed and the dugout empties.</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">Bro actually said that to the ump with 3 million people watching.</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"He literally dared the umpire to do it"</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Aggressive baseball stadium murmur cutting out instantly to dead silence on the punchline.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0-0.5s: Instant cut to the manager sprinting out of the dugout, zero intro.</li><li>0.5-1.5s: Zoom in on the face-to-face shouting match with comic-book style reaction pop-ups.</li><li>1.5-3.0s: Slow-motion replay focusing on the exact syllable where the ejection happens.</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> Jomboy never misses a lip read 💀</div></div><div class="brief-card"><div class="brief-head"><div><span class="ticker">HOUSE.SP</span> <span class="badge badge-purple">YouTube Shorts</span></div><span class="badge badge-cyan">READY TO PRODUCE</span></div><div class="brief-angle">absurd sports lore/meme commentary</div><div class="brief-grid"><div><div class="field-label">2-SECOND HOOK</div><div class="field-val">Bro has played for so many poverty franchises his passport looks like a novel.</div></div><div><div class="field-label">ON-SCREEN TEXT</div><div class="field-val ost">"Bro is globe-trotting for the minimum 💀"</div></div></div><div class="audio-box"><span class="field-label">AUDIO / SOUND CUE</span><div>Stuttering lo-fi beat drop right as the passport slam sound effect hits.</div></div><div class="beats-box"><div class="field-label">TIMED EDIT BEATS</div><ol><li>0.0s: Fast zoom on player face with passport graphic stamped 12 times.</li><li>0.8s: Quick cut montage of terrible jersey edits across different leagues.</li><li>1.8s: Punch-in on the exact moment realization hits him on the bench.</li></ol></div><div class="caption-line"><span class="field-label">CAPTION:</span> Bro&#x27;s career arc is a world tour at this point</div></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">TOP CULTURAL VELOCITY SCREENER</div>
+      <table>
+        <thead><tr><th>TICKER</th><th>SECTOR</th><th>SIGNAL</th><th class="num">ALPHA</th><th class="num">CVS</th><th class="num">SHARE/LIKE</th><th class="num">BREAKOUT</th></tr></thead>
+        <tbody><tr><td class="mono strong">PUBIT.PP</td><td>POP</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">41.9</td><td class="num">39.8</td><td class="num">17.5%</td><td class="num">44.6x</td></tr><tr><td class="mono strong">KATT.FMT</td><td>CREATORS</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">33.1</td><td class="num">36.6</td><td class="num">44.9%</td><td class="num">--</td></tr><tr><td class="mono strong">GENIU.MU</td><td>MUSIC</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">27.3</td><td class="num">25.8</td><td class="num">2.1%</td><td class="num">36.09x</td></tr><tr><td class="mono strong">CORRI.FT</td><td>FILM_TV</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">26.1</td><td class="num">27.6</td><td class="num">--</td><td class="num">46.52x</td></tr><tr><td class="mono strong">JOMBO.SP</td><td>SPORTS</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">26.1</td><td class="num">27.6</td><td class="num">--</td><td class="num">27.21x</td></tr><tr><td class="mono strong">COLIN.CR</td><td>CREATORS</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">25.0</td><td class="num">25.8</td><td class="num">--</td><td class="num">49.29x</td></tr><tr><td class="mono strong">HOUSE.SP</td><td>SPORTS</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">25.0</td><td class="num">25.8</td><td class="num">--</td><td class="num">50.56x</td></tr><tr><td class="mono strong">IGN.GM</td><td>GAMING</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">24.4</td><td class="num">27.6</td><td class="num">--</td><td class="num">15.74x</td></tr><tr><td class="mono strong">RICKB.MU</td><td>MUSIC</td><td><span class="badge badge-green">STRONG_SIGNAL</span></td><td class="num strong">24.4</td><td class="num">27.6</td><td class="num">--</td><td class="num">15.84x</td></tr><tr><td class="mono strong">MKBHD.CR</td><td>CREATORS</td><td><span class="badge badge-muted">NOISE</span></td><td class="num strong">19.6</td><td class="num">27.6</td><td class="num">--</td><td class="num">6.98x</td></tr><tr><td class="mono strong">NEWRO.FT</td><td>FILM_TV</td><td><span class="badge badge-muted">NOISE</span></td><td class="num strong">19.5</td><td class="num">27.6</td><td class="num">--</td><td class="num">6.87x</td></tr><tr><td class="mono strong">MRWHO.CR</td><td>CREATORS</td><td><span class="badge badge-muted">NOISE</span></td><td class="num strong">19.5</td><td class="num">27.4</td><td class="num">--</td><td class="num">7.0x</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="section"><div class="section-title">ACTIVE SONG-SEEDING CATALOG (28 TRACKS)</div><div class="track-grid"><div class="track-pill"><div class="track-title">Olimpo <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">flex · win · boss</div></div><div class="track-pill"><div class="track-title">Suzuki <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">car · bike · trokiando</div></div><div class="track-pill"><div class="track-title">Coqueta <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">flirt · grwm · outfit</div></div><div class="track-pill"><div class="track-title">Cuando No Era Cantante REMIX <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">glow_up · throwback · before_after</div></div><div class="track-pill"><div class="track-title">Tu Sancho <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">toxic_pov · roast · drama</div></div><div class="track-pill"><div class="track-title">Marlboro Rojo <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">late_night · desamor · moody</div></div><div class="track-pill"><div class="track-title">Me Jalo <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">party · weekend · friends</div></div><div class="track-pill"><div class="track-title">Excesos <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">nightlife · antros · party</div></div><div class="track-pill"><div class="track-title">Que Onda <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">late_night · texting · situationship</div></div><div class="track-pill"><div class="track-title">Caperuza <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">street · corrido_belico · grit</div></div><div class="track-pill"><div class="track-title">Ansiedad <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">overthinking · desamor · relatable</div></div><div class="track-pill"><div class="track-title">Noche Perfecta <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">romance · date_night · couple</div></div><div class="track-pill"><div class="track-title">Pero No Te Enamores <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">situationship · toxic_pov · party</div></div><div class="track-pill"><div class="track-title">PUES YA NI PEDO <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">unbothered · comedy · meme</div></div><div class="track-pill"><div class="track-title">Una Cerveza <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">drinking · weekend · friends</div></div><div class="track-pill"><div class="track-title">Por Esos Ojos <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">crush · romance · couple</div></div><div class="track-pill"><div class="track-title">Chavalitas <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">party · antros · friends</div></div><div class="track-pill"><div class="track-title">Como Capo <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">boss · flex · luxury</div></div><div class="track-pill"><div class="track-title">Ultimante <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">reflection · growth · solo</div></div><div class="track-pill"><div class="track-title">Crazyz <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">hype · chaos · party</div></div><div class="track-pill"><div class="track-title">Taco El Flaco <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">street · la_culture · food</div></div><div class="track-pill"><div class="track-title">Toxicos <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">toxic_pov · couple · drama</div></div><div class="track-pill"><div class="track-title">Suiza <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">luxury · travel · flex</div></div><div class="track-pill"><div class="track-title">Apaga El Cel <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">couple · late_night · unplug</div></div><div class="track-pill"><div class="track-title">No Pierdo La Vida <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">moving_on · confidence · desamor</div></div><div class="track-pill"><div class="track-title">Pues Que Le Hago <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">relatable · comedy · desamor</div></div><div class="track-pill"><div class="track-title">Tu Boda <span class="badge badge-muted" style="font-size:9px">CATALOG</span></div><div class="track-meta">desamor · heartbreak · toxic_pov</div></div><div class="track-pill"><div class="track-title">Chula Vente <span class="badge badge-green" style="font-size:9px">PUSH</span></div><div class="track-meta">flirt · party · dance</div></div></div></section>
+  </div>
+</body>
+</html>

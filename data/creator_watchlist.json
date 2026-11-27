@@ -24,7 +24,8 @@
     "platform": "YouTube Shorts",
     "handle": "veritasium",
     "sector": "CREATORS",
-    "last_pulled_at": "2026-11-26T00:43:00Z"
+    "last_pulled_at": "2026-11-26T00:43:00Z",
+    "last_terminal_ingest_at": "2026-11-27T20:03:29Z"
   },
   {
     "platform": "TikTok",
@@ -225,7 +226,8 @@
     "platform": "TikTok",
     "handle": "pubity",
     "sector": "POP",
-    "niche": "pop_culture_memes"
+    "niche": "pop_culture_memes",
+    "last_terminal_ingest_at": "2026-11-27T20:03:29Z"
   },
   {
     "platform": "Instagram Reels",
@@ -291,7 +293,8 @@
     "platform": "TikTok",
     "handle": "genius",
     "sector": "MUSIC",
-    "niche": "music_discovery"
+    "niche": "music_discovery",
+    "last_terminal_ingest_at": "2026-11-27T20:03:29Z"
   },
   {
     "platform": "Instagram Reels",
@@ -366,7 +369,8 @@
     "handle": "fuerzaregida",
     "sector": "MUSIC",
     "niche": "street_mob_roster",
-    "project": "street_mob"
+    "project": "street_mob",
+    "last_terminal_ingest_at": "2026-11-27T20:03:29Z"
   },
   {
     "platform": "Instagram Reels",
@@ -409,7 +413,8 @@
     "handle": "billboardlatin",
     "sector": "MUSIC",
     "niche": "musica_mexicana_trends",
-    "project": "street_mob"
+    "project": "street_mob",
+    "last_terminal_ingest_at": "2026-11-27T20:03:29Z"
   },
   {
     "platform": "TikTok",

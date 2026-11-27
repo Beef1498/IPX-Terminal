@@ -299,6 +299,26 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self.wfile.write(csv_body)
                     return
 
+                if path == "/api/quant/export-brief.html":
+                    from ipx_terminal.projects import get_default_active_project, get_project, render_client_brief_html
+
+                    proj_param = qs.get("project_id", [""])[0]
+                    if str(proj_param).upper() == "NONE":
+                        proj = None
+                    else:
+                        proj = get_project(proj_param) if proj_param else get_default_active_project()
+                    html_body = render_client_brief_html(db=db, project=proj).encode("utf-8")
+                    fname = f"ipx_brief_{proj['id']}.html" if proj else "ipx_executive_brief.html"
+                    is_dl = qs.get("download", ["0"])[0].lower() in ("1", "true", "yes")
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    if is_dl:
+                        self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                    self.send_header("Content-Length", str(len(html_body)))
+                    self.end_headers()
+                    self.wfile.write(html_body)
+                    return
+
                 if path.startswith("/api/ticker/"):
                     ticker = urllib.parse.unquote(path[len("/api/ticker/"):])
                     norm = normalize_ticker(ticker)

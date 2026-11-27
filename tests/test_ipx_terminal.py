@@ -748,6 +748,14 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertIn("@fuerzaregida", handles)
         self.assertIn("@foosgonewild", handles)
 
+        # Visual HTML/PDF Executive Brief export
+        from ipx_terminal.projects import render_client_brief_html
+
+        brief_html = render_client_brief_html(self.db, project=proj)
+        self.assertIn("Fuerza Regida / Street Mob Records", brief_html)
+        self.assertIn("FACELESS AT SCALE", brief_html)
+        self.assertIn("Print / Save as PDF", brief_html)
+
 
 if __name__ == "__main__":
     unittest.main()
