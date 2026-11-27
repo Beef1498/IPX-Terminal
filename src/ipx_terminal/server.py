@@ -255,6 +255,12 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, **build_quant_workspace(db)})
                     return
 
+                if path == "/api/vcrm":
+                    from ipx_terminal.vcrm import evaluate_vcrm
+
+                    self._send_json({"ok": True, **evaluate_vcrm(db)})
+                    return
+
                 if path == "/api/quant/export.csv":
                     csv_body = export_quant_factors_csv(db).encode("utf-8")
                     self.send_response(HTTPStatus.OK)

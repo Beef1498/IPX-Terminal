@@ -558,6 +558,11 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertIn("ticker,name,sector,signal_flag,alpha_score", csv_text)
         self.assertIn("IPX.QNT", csv_text)
 
+        vcrm = ws["vcrm"]
+        self.assertEqual(vcrm["summary"]["total"], 8)
+        req1 = next(g for g in vcrm["gates"] if g["id"] == "IPX-REQ-001")
+        self.assertEqual(req1["status"], "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

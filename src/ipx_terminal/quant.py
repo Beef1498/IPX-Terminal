@@ -19,7 +19,7 @@ def _f(val: Any, default: float = 0.0) -> float:
         return default
 
 
-def build_quant_workspace(db: TerminalDB) -> Dict[str, Any]:
+def build_quant_workspace(db: TerminalDB, include_vcrm: bool = True) -> Dict[str, Any]:
     """Compute multi-factor screener rows, market-vs-social divergences, and calibration scorecard."""
     movers = db.get_top_movers(limit=200)
     signals = db.list_signals(limit=250)
@@ -181,7 +181,7 @@ def build_quant_workspace(db: TerminalDB) -> Dict[str, Any]:
         for sec, d in sorted(by_sector.items())
     ]
 
-    return {
+    result: Dict[str, Any] = {
         "summary": {
             "tracked_tickers": len(screener),
             "strong_signals": sum(1 for r in screener if r["signal_flag"] == "STRONG_SIGNAL"),
@@ -198,6 +198,11 @@ def build_quant_workspace(db: TerminalDB) -> Dict[str, Any]:
         "divergences": divergences,
         "sector_scorecard": sector_scorecard,
     }
+    if include_vcrm:
+        from ipx_terminal.vcrm import evaluate_vcrm
+
+        result["vcrm"] = evaluate_vcrm(db, quant_data=result)
+    return result
 
 
 def export_quant_factors_csv(db: TerminalDB) -> str:

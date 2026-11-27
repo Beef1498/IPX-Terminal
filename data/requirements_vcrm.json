@@ -1,0 +1,87 @@
+{
+  "version": "1.0",
+  "title": "IPX Verification Cross-Reference Matrix (VCRM)",
+  "description": "Single source of truth for IPX mandatory SHALL requirements, linking Verification (built right) and Validation (built the right thing) to live Terminal & Eval evidence.",
+  "requirements": [
+    {
+      "id": "IPX-REQ-001",
+      "kind": "Verification",
+      "category": "Data Integrity",
+      "title": "Zero Future Leakage",
+      "requirement": "All t_0 signal snapshots SHALL be frozen strictly before outcome resolution (0 timestamp leakage violations).",
+      "method": "Inspection",
+      "target": "0 violations",
+      "check_key": "zero_future_leakage"
+    },
+    {
+      "id": "IPX-REQ-002",
+      "kind": "Validation",
+      "category": "Cadence",
+      "title": "48–72h Recheck Discipline",
+      "requirement": "Pending 48–72h prediction calls SHALL be resolved on schedule with 0 overdue calls.",
+      "method": "Inspection",
+      "target": "0 overdue",
+      "check_key": "zero_overdue_calls"
+    },
+    {
+      "id": "IPX-REQ-003",
+      "kind": "Validation",
+      "category": "Quant Alpha",
+      "title": "Brier Calibration Floor",
+      "requirement": "Resolved Quant calls SHALL maintain a Brier calibration score >= 70.0% across at least 3 resolved outcomes.",
+      "method": "Analysis",
+      "target": ">= 70.0% (n>=3)",
+      "check_key": "brier_calibration_floor"
+    },
+    {
+      "id": "IPX-REQ-004",
+      "kind": "Validation",
+      "category": "Screener Depth",
+      "title": "Active Multi-Factor Coverage",
+      "requirement": "The Quant Screener SHALL track >= 5 IP entities with at least 1 STRONG_SIGNAL candidate surfaced.",
+      "method": "Demonstration",
+      "target": ">= 5 tickers & >= 1 strong",
+      "check_key": "screener_coverage"
+    },
+    {
+      "id": "IPX-REQ-005",
+      "kind": "Validation",
+      "category": "Market Odds",
+      "title": "Prediction Market Grounding",
+      "requirement": "At least 1 live Polymarket or Kalshi contract SHALL be frozen as a t_0 signal for Odds-vs-Social divergence tracking.",
+      "method": "Demonstration",
+      "target": ">= 1 frozen market",
+      "check_key": "prediction_market_grounding"
+    },
+    {
+      "id": "IPX-REQ-006",
+      "kind": "Verification",
+      "category": "Model Eval",
+      "title": "Independent Eval Gate",
+      "requirement": "The latest completed IPX-Eval run SHALL achieve an overall score >= 75.0% on independent held-out outcomes.",
+      "method": "Test",
+      "target": ">= 75.0% overall",
+      "check_key": "independent_eval_gate"
+    },
+    {
+      "id": "IPX-REQ-007",
+      "kind": "Validation",
+      "category": "Creative A/B",
+      "title": "Real-World Creative Outcomes",
+      "requirement": "The Creative Studio / Auto-Pairer SHALL log >= 2 graded real-world 48h outcomes (winner/flop) to avoid circular AI grading.",
+      "method": "Test",
+      "target": ">= 2 graded briefs",
+      "check_key": "creative_outcomes_graded"
+    },
+    {
+      "id": "IPX-REQ-008",
+      "kind": "Verification",
+      "category": "Audit Trail",
+      "title": "Human-vs-AI Edge Tracking",
+      "requirement": "Resolved calls SHALL include >= 1 AI benchmark prediction so Human Quant vs. AI edge is continuously measurable.",
+      "method": "Analysis",
+      "target": ">= 1 AI-scored call",
+      "check_key": "human_vs_ai_audit"
+    }
+  ]
+}

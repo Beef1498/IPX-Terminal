@@ -307,7 +307,7 @@ function renderQuantView() {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
         <div class="hub-card">
           <div class="hub-card-header"><span>ODDS VS. SOCIAL DIVERGENCE RADAR</span></div>
           <div class="hub-card-body">${divHtml}</div>
@@ -317,6 +317,59 @@ function renderQuantView() {
           <div class="hub-card-body">${secHtml}</div>
         </div>
       </div>
+
+      ${(() => {
+        const vcrm = q.vcrm || {};
+        const vs = vcrm.summary || {};
+        const gates = vcrm.gates || [];
+        if (!gates.length) return "";
+        const stBadge = (st) =>
+          st === "PASS"
+            ? `<span class="pill green">PASS</span>`
+            : st === "FAIL"
+              ? `<span class="pill" style="background:rgba(251,113,133,0.18);color:#fb7185;border-color:rgba(251,113,133,0.45)">FAIL</span>`
+              : `<span class="pill amber">PENDING</span>`;
+        const kindBadge = (k) =>
+          k === "Verification"
+            ? `<span class="pill cyan">VERIFICATION</span>`
+            : `<span class="pill" style="color:#c4b5fd;border-color:rgba(167,139,250,0.4)">VALIDATION</span>`;
+        return `
+        <div class="hub-card">
+          <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+            <span>LIVE VCRM // 8-GATE REQUIREMENTS &amp; RELEASE MATRIX (${vs.passed ?? 0}/${vs.total ?? 0} PASS)</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span class="pill green">${vs.passed ?? 0} PASS</span>
+              ${(vs.failed ?? 0) > 0 ? `<span class="pill" style="background:rgba(251,113,133,0.18);color:#fb7185;border-color:rgba(251,113,133,0.45)">${vs.failed} FAIL</span>` : ""}
+              ${(vs.pending ?? 0) > 0 ? `<span class="pill amber">${vs.pending} PENDING</span>` : ""}
+              <span class="pill" style="color:#94a3b8">${esc(vcrm.spec_file || "data/requirements_vcrm.json")}</span>
+            </div>
+          </div>
+          <div class="hub-card-body" style="overflow-x:auto">
+            <table class="hub-table">
+              <thead>
+                <tr>
+                  <th>ID</th><th>TYPE</th><th>REQUIREMENT (SHALL)</th><th>METHOD</th><th>TARGET</th><th>LIVE EVIDENCE</th><th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${gates
+                  .map(
+                    (g) => `<tr>
+                      <td style="font-family:monospace;font-weight:700;color:#e2e8f0;white-space:nowrap">${esc(g.id)}</td>
+                      <td>${kindBadge(g.kind)}</td>
+                      <td><div style="font-weight:600;color:#f1f5f9">${esc(g.title)}</div><div style="font-size:11px;color:#94a3b8">${esc(g.requirement)}</div></td>
+                      <td style="font-family:monospace;font-size:11px;color:#cbd5e1">${esc(g.method)}</td>
+                      <td style="font-family:monospace;font-size:11px;color:#94a3b8;white-space:nowrap">${esc(g.target)}</td>
+                      <td style="font-family:monospace;font-size:11.5px;color:#e2e8f0;white-space:nowrap">${esc(g.observed)}</td>
+                      <td>${stBadge(g.status)}</td>
+                    </tr>`
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+      })()}
     </div>
   `;
 
