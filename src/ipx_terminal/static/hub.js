@@ -635,13 +635,13 @@ function renderCulturalTreeSection(tl) {
   const rOuter = 250;
   const rSliceLbl = 294;
 
-  // 6 Cultural Sectors arranged around the 360° perimeter with clean non-clipping labels
+  // 6 Cultural Sectors arranged around the 360° perimeter (distinct colors — emerald & amber reserved strictly for SEED NOW / PEAK NOW)
   const slices = [
     { id: "MUSIC", label: "MUSIC", scopeMap: "music_industry", color: "#22d3ee", startDeg: -82, endDeg: -22 },
     { id: "POP", label: "POP & HOLIDAYS", scopeMap: "national", color: "#a78bfa", startDeg: -22, endDeg: 38 },
     { id: "SPORTS", label: "SPORTS", scopeMap: "sports", color: "#38bdf8", startDeg: 38, endDeg: 98 },
-    { id: "CREATORS", label: "CREATORS", scopeMap: "custom", color: "#34d399", startDeg: 98, endDeg: 158 },
-    { id: "REGIONAL", label: "REGIONAL", scopeMap: "regional", color: "#f59e0b", startDeg: 158, endDeg: 218 },
+    { id: "CREATORS", label: "CREATORS", scopeMap: "custom", color: "#2dd4bf", startDeg: 98, endDeg: 158 },
+    { id: "REGIONAL", label: "REGIONAL", scopeMap: "regional", color: "#f472b6", startDeg: 158, endDeg: 218 },
     { id: "ENT", label: "FILM & GAMING", scopeMap: "ALL", color: "#fb7185", startDeg: 218, endDeg: 278 },
   ];
   const sliceById = Object.fromEntries(slices.map((s) => [s.id, s]));
@@ -971,7 +971,8 @@ function renderCulturalTreeSection(tl) {
           }
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="btn-action cyan" data-tl-jump="${esc(selNode.ticker)}">Open ${esc(selNode.ticker)} in Terminal →</button>
+          <button type="button" class="btn-action green" data-tree-draft-brief="${selNode.signal_id || ""}" data-tree-draft-ticker="${esc(selNode.ticker)}">⚡ Draft Brief → A/B</button>
+          <button type="button" class="btn-action cyan" data-tl-jump="${esc(selNode.ticker)}">Open ${esc(selNode.ticker)} →</button>
         </div>
       `;
     } else {
@@ -981,7 +982,7 @@ function renderCulturalTreeSection(tl) {
         <div>
           ${stepperHtml}
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-            <span class="pill" style="color:#34d399;border-color:#10b981">${shapeIcon} ${esc(selNode.window_status)} · ${dLbl}</span>
+            <span class="pill" style="color:${selNode.window_status === "PEAK_NOW" ? "#f59e0b" : "#34d399"};border-color:${selNode.window_status === "PEAK_NOW" ? "#f59e0b" : "#10b981"}">${shapeIcon} ${esc(selNode.window_status)} · ${dLbl}</span>
             <span class="pill">${esc(selNode.date)}</span>
           </div>
           <div style="font-size:14.5px;font-weight:800;color:#f8fafc;margin-bottom:4px">${esc(selNode.name)}</div>
@@ -1017,7 +1018,8 @@ function renderCulturalTreeSection(tl) {
           }
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="btn-action green" id="btn-tree-branch-here" data-parent-anchor="${esc(selNode.anchor_id || "")}">+ Branch Catalyst Here</button>
+          <button type="button" class="btn-action cyan" id="btn-tree-wave-breakdown" data-wave-id="${esc(selNode.id)}">📋 Full Breakdown</button>
+          <button type="button" class="btn-action green" id="btn-tree-branch-here" data-parent-anchor="${esc(selNode.anchor_id || "")}">+ Branch Catalyst</button>
         </div>
       `;
     }
@@ -1061,12 +1063,24 @@ function renderCulturalTreeSection(tl) {
               ${selCalloutSvg}
             </svg>
             <div class="tree-legend">
-              <span><b>◆</b> Live t₀ Signal</span>
-              <span><b>●</b> Holiday / Cultural Wave</span>
-              <span><b>■</b> Pro/College Sports &amp; Custom</span>
-              <span><span class="tree-legend-dot" style="background:#10b981"></span>Seed Now</span>
-              <span><span class="tree-legend-dot" style="background:#f59e0b"></span>Peak Now</span>
-              <span>Tip: Click any rim label or month ring to filter</span>
+              <div class="tree-legend-group">
+                <div class="tree-legend-title">Node Shapes &amp; Size</div>
+                <div class="tree-legend-item"><span class="tree-legend-diamond" style="background:#22d3ee"></span><span><b>Live t₀ Signal</b> (bigger = higher CVS velocity)</span></div>
+                <div class="tree-legend-item"><span class="tree-legend-dot" style="background:#a78bfa"></span><span><b>Holiday / Cultural Wave</b> (colored by slice)</span></div>
+                <div class="tree-legend-item"><span class="tree-legend-square" style="background:#38bdf8"></span><span><b>Pro/College Sports &amp; Custom Catalyst</b></span></div>
+              </div>
+              <div class="tree-legend-group">
+                <div class="tree-legend-title">Flashing Rings &amp; Action Window</div>
+                <div class="tree-legend-item"><span class="tree-legend-pulse" style="color:#10b981;background:#10b981"></span><span><b>Flashing Green = SEED NOW</b> (2–5 wks early)</span></div>
+                <div class="tree-legend-item"><span class="tree-legend-pulse" style="color:#f59e0b;background:#f59e0b"></span><span><b>Flashing Amber = PEAK NOW</b> (active / ≤3d)</span></div>
+                <div class="tree-legend-item"><span class="tree-legend-dot" style="background:#070b12;border:2px solid #ffffff"></span><span><b>White Ring</b> = Selected node in Inspector</span></div>
+              </div>
+              <div class="tree-legend-group">
+                <div class="tree-legend-title">Reading the Core (Center → Out)</div>
+                <div class="tree-legend-item"><span><b>Inner Rings:</b> Past months &nbsp;·&nbsp; <b style="color:#34d399">Green Ring:</b> Today</span></div>
+                <div class="tree-legend-item"><span><b>Outer Dashed Rings:</b> Upcoming future waves</span></div>
+                <div class="tree-legend-item"><span style="color:#34d399"><b>---</b></span><span><b>Glowing Line:</b> Live signal feeding a future wave</span></div>
+              </div>
             </div>
           </div>
 
@@ -1330,6 +1344,163 @@ function renderTimelineView() {
     hubState.timelineTreeMonthFilter = null;
     hubState.timelineScopeFilter = "ALL";
     renderTimelineView();
+  });
+
+  // 1-click Draft Creative Brief directly from a selected Live Signal on the Growth Rings
+  el.querySelectorAll("[data-tree-draft-brief]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const sigId = Number(btn.dataset.treeDraftBrief);
+      if (!sigId) return;
+      const prevTxt = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Drafting Brief...";
+      setStatus(`Drafting Creative Brief for ${btn.dataset.treeDraftTicker || "signal"}...`);
+      try {
+        const projId = typeof state !== "undefined" && state.activeProjectId && state.activeProjectId !== "NONE" ? state.activeProjectId : null;
+        const gen = await api("/api/briefs/generate", {
+          method: "POST",
+          body: JSON.stringify({ signal_id: sigId, target_platform: "TikTok", project_id: projId }),
+        });
+        const d = gen.draft || {};
+        const saved = await api("/api/briefs", {
+          method: "POST",
+          body: JSON.stringify({
+            signal_id: sigId,
+            target_platform: d.target_platform || "TikTok",
+            angle: d.angle || "Cultural wave brief",
+            hook_2s: d.hook_2s || "",
+            on_screen_text: d.on_screen_text || "",
+            caption: d.caption || "",
+            edit_beats: d.edit_beats || [],
+            audio_cue: d.audio_cue || "",
+            model_used: d.model_used || "gemini",
+          }),
+        });
+        if (typeof state !== "undefined" && Array.isArray(state.briefs)) {
+          state.briefs.unshift(saved.brief);
+          if (typeof updateBriefAbBadge === "function") updateBriefAbBadge();
+        }
+        setStatus(`Drafted brief #${saved.brief.id} — opening 🔥 BRIEF A/B Swipe Deck!`);
+        if (typeof openBriefAbSwipeModal === "function") openBriefAbSwipeModal();
+      } catch (err) {
+        setStatus(`Brief draft failed: ${err.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevTxt;
+      }
+    });
+  });
+
+  // 1-click Full Wave Breakdown Modal for any Cultural / Sports Wave
+  document.getElementById("btn-tree-wave-breakdown")?.addEventListener("click", () => {
+    const sg = hubState.timeline?.social_graph;
+    if (!sg) return;
+    const allBuds = (sg.branches || []).flatMap((b) => b.buds || []);
+    const allLeaves = (sg.branches || []).flatMap((b) => b.leaves || []);
+    const leafById = Object.fromEntries(allLeaves.map((l) => [l.id, l]));
+    const bud = allBuds.find((b) => b.id === hubState.selectedTreeNodeId);
+    if (!bud) return;
+    const linkedSigs = (sg.edges || [])
+      .filter((e) => e.relation === "signal_to_anchor" && e.target === bud.id)
+      .map((e) => ({ edge: e, leaf: leafById[e.source] }))
+      .filter((x) => x.leaf);
+
+    const tracksBlock = (bud.matched_tracks || []).length
+      ? bud.matched_tracks
+          .map(
+            (t) => `<div style="padding:7px 9px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.28);border-radius:6px;margin-bottom:6px">
+              <div style="font-weight:700;color:#f8fafc">${esc(t.artist)} — ${esc(t.title)}</div>
+              <div style="font-size:11px;color:#22d3ee;font-family:monospace">Clip cue: ${esc(t.clip_timestamp || "chorus drop")} · Status: ${esc(t.status || "catalog")}</div>
+            </div>`
+          )
+          .join("")
+      : `<p style="color:#64748b;font-size:12px;margin:0">Select a Client Project in the top bar (e.g., Street Mob) to auto-match catalog songs to this wave.</p>`;
+
+    const sigsBlock = linkedSigs.length
+      ? linkedSigs
+          .map(
+            ({ edge, leaf }) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;background:#0f172a;border:1px solid #263345;border-radius:6px;margin-bottom:6px">
+              <div style="min-width:0">
+                <div style="font-size:12px;color:#f8fafc"><b style="color:#38bdf8;font-family:monospace">${esc(leaf.ticker)}</b> · CVS ${leaf.cvs_score}</div>
+                <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(leaf.title || "")}</div>
+                <div style="font-size:10px;color:#34d399">Matched via: ${esc(edge.label)}</div>
+              </div>
+              <button type="button" class="btn-action green" data-modal-draft-sig="${leaf.signal_id}" style="padding:4px 9px;font-size:10.5px;flex-shrink:0">⚡ Draft Brief</button>
+            </div>`
+          )
+          .join("")
+      : `<p style="color:#64748b;font-size:12px;margin:0">No live t₀ signals linked yet — run Morning Quant or paste a viral URL to feed this wave.</p>`;
+
+    openModal(
+      `📋 WAVE BREAKDOWN // ${bud.name.toUpperCase()}`,
+      `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <span class="pill" style="color:#34d399;border-color:#10b981">${esc(bud.window_status)} · ${bud.days_until <= 0 ? "ACTIVE NOW" : `T-${bud.days_until}d`}</span>
+        <span class="pill">📅 ${esc(bud.date)}</span>
+        <span class="pill">${esc((bud.scope || "national").toUpperCase())}</span>
+      </div>
+      <div style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin-bottom:10px">
+        <b style="color:#34d399">Spotify &amp; Billboard Strategy:</b> ${esc(bud.spotify_billboard_angle || "Pre-wave song seeding opportunity.")}
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">
+        <b style="color:#e2e8f0">First-Mover Cohort:</b> ${esc(bud.first_mover_cohort || "--")}
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-family:monospace;font-size:10px;color:#94a3b8;margin-bottom:5px">PRIORITY SPOTIFY / BILLBOARD CITIES</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          ${(bud.target_cities || []).map((c) => `<span class="pill green">📍 ${esc(c)}</span>`).join("") || `<span style="color:#64748b;font-size:11px">National</span>`}
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-family:monospace;font-size:10px;color:#22d3ee;margin-bottom:5px">MATCHED CLIENT TRACKS TO SEED</div>
+        ${tracksBlock}
+      </div>
+      <div>
+        <div style="font-family:monospace;font-size:10px;color:#38bdf8;margin-bottom:5px">CONNECTED LIVE SIGNALS (${linkedSigs.length})</div>
+        ${sigsBlock}
+      </div>
+      `
+    );
+
+    document.querySelectorAll("[data-modal-draft-sig]").forEach((mBtn) => {
+      mBtn.addEventListener("click", async () => {
+        const sid = Number(mBtn.dataset.modalDraftSig);
+        mBtn.disabled = true;
+        mBtn.textContent = "Drafting...";
+        try {
+          const projId = typeof state !== "undefined" && state.activeProjectId && state.activeProjectId !== "NONE" ? state.activeProjectId : null;
+          const gen = await api("/api/briefs/generate", {
+            method: "POST",
+            body: JSON.stringify({ signal_id: sid, target_platform: "TikTok", project_id: projId }),
+          });
+          const d = gen.draft || {};
+          const saved = await api("/api/briefs", {
+            method: "POST",
+            body: JSON.stringify({
+              signal_id: sid,
+              target_platform: d.target_platform || "TikTok",
+              angle: d.angle || "Cultural wave brief",
+              hook_2s: d.hook_2s || "",
+              on_screen_text: d.on_screen_text || "",
+              caption: d.caption || "",
+              edit_beats: d.edit_beats || [],
+              audio_cue: d.audio_cue || "",
+              model_used: d.model_used || "gemini",
+            }),
+          });
+          if (typeof state !== "undefined" && Array.isArray(state.briefs)) {
+            state.briefs.unshift(saved.brief);
+            if (typeof updateBriefAbBadge === "function") updateBriefAbBadge();
+          }
+          setStatus(`Drafted brief #${saved.brief.id} — opening 🔥 BRIEF A/B Swipe Deck!`);
+          if (typeof openBriefAbSwipeModal === "function") openBriefAbSwipeModal();
+        } catch (err) {
+          mBtn.disabled = false;
+          mBtn.textContent = "⚡ Draft Brief";
+          setStatus(`Draft failed: ${err.message}`, true);
+        }
+      });
+    });
   });
   document.getElementById("btn-tl-sync-sports").addEventListener("click", async () => {
     const btn = document.getElementById("btn-tl-sync-sports");
