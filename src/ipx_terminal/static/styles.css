@@ -1020,8 +1020,8 @@ body {
   width: 100%;
   height: auto;
   display: block;
-  max-height: 520px;
-  max-width: 520px;
+  max-height: 540px;
+  max-width: 620px;
   margin: 0 auto;
 }
 .tree-node-hit {

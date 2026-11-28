@@ -18,7 +18,9 @@ const hubState = {
   timelineScopeFilter: "ALL",
   timelineWindowFilter: "ALL",
   timelineCityFilter: "ALL",
-  timelineTreeMode: "year", // "year" | "canopy"
+  timelineTreeMode: "canopy", // "canopy" (Living Edge 90d - default) | "year" (Full Year Core 12 Rings)
+  timelineTreeSliceFilter: "ALL",
+  timelineTreeMonthFilter: null,
   selectedTreeNodeId: null,
   orchestration: null,
   selectedHardwareId: null,
@@ -619,25 +621,28 @@ function renderCulturalTreeSection(tl) {
   const sg = tl.social_graph;
   if (!sg || !(sg.branches || []).length) return "";
 
-  const mode = hubState.timelineTreeMode || "year"; // "year" (12 Growth Rings) | "canopy" (Active 3-Ring Growth Edge)
+  const mode = hubState.timelineTreeMode || "canopy"; // "canopy" (4-ring Living Edge) | "year" (12-ring Core)
+  const sliceFilter = hubState.timelineTreeSliceFilter || "ALL";
+  const monthFilter = hubState.timelineTreeMonthFilter ? Number(hubState.timelineTreeMonthFilter) : null;
   const todayM = Number(sg.today_month || 1);
   const allBranches = sg.branches || [];
 
-  const S = 680;
-  const cx = S / 2;
-  const cy = S / 2;
+  const W = 780;
+  const H = 680;
+  const cx = W / 2;
+  const cy = H / 2;
   const rInner = 46;
-  const rOuter = 266;
-  const rSliceLbl = 296;
+  const rOuter = 250;
+  const rSliceLbl = 294;
 
-  // 6 Cultural Sectors arranged around the 360° perimeter (Angle = Cultural Domain, Radius = Month Growth Ring!)
+  // 6 Cultural Sectors arranged around the 360° perimeter with clean non-clipping labels
   const slices = [
-    { id: "MUSIC", label: "MUSIC / SPOTIFY", color: "#22d3ee", startDeg: -82, endDeg: -22 },
-    { id: "POP", label: "POP & HOLIDAYS", color: "#a78bfa", startDeg: -22, endDeg: 38 },
-    { id: "SPORTS", label: "PRO & COLLEGE SPORTS", color: "#38bdf8", startDeg: 38, endDeg: 98 },
-    { id: "CREATORS", label: "CREATORS & MEMES", color: "#34d399", startDeg: 98, endDeg: 158 },
-    { id: "REGIONAL", label: "REGIONAL / CITIES", color: "#f59e0b", startDeg: 158, endDeg: 218 },
-    { id: "ENT", label: "FILM · GAMING · DEALS", color: "#fb7185", startDeg: 218, endDeg: 278 },
+    { id: "MUSIC", label: "MUSIC", scopeMap: "music_industry", color: "#22d3ee", startDeg: -82, endDeg: -22 },
+    { id: "POP", label: "POP & HOLIDAYS", scopeMap: "national", color: "#a78bfa", startDeg: -22, endDeg: 38 },
+    { id: "SPORTS", label: "SPORTS", scopeMap: "sports", color: "#38bdf8", startDeg: 38, endDeg: 98 },
+    { id: "CREATORS", label: "CREATORS", scopeMap: "custom", color: "#34d399", startDeg: 98, endDeg: 158 },
+    { id: "REGIONAL", label: "REGIONAL", scopeMap: "regional", color: "#f59e0b", startDeg: 158, endDeg: 218 },
+    { id: "ENT", label: "FILM & GAMING", scopeMap: "ALL", color: "#fb7185", startDeg: 218, endDeg: 278 },
   ];
   const sliceById = Object.fromEntries(slices.map((s) => [s.id, s]));
 
@@ -647,7 +652,6 @@ function renderCulturalTreeSection(tl) {
     y: cy + r * Math.sin(rad),
   });
 
-  // Map any leaf (signal) or bud (anchor/sports/catalyst) to one of the 6 cultural slices
   const getSliceId = (node) => {
     if (node.node_type === "leaf") {
       const sec = String(node.sector || "POP").toUpperCase();
@@ -665,52 +669,80 @@ function renderCulturalTreeSection(tl) {
     return "POP";
   };
 
-  // Determine active 3-month living growth edge
-  const prevM = todayM === 1 ? 12 : todayM - 1;
-  const nextM = todayM === 12 ? 1 : todayM + 1;
-  const activeEdgeMonths = new Set([prevM, todayM, nextM]);
+  // Active 4-ring Living Edge: Last Month -> Today -> Next Month -> +2 Months
+  const wrapM = (m) => ((m - 1 + 12) % 12) + 1;
+  const edgeOrder = [wrapM(todayM - 1), todayM, wrapM(todayM + 1), wrapM(todayM + 2)];
 
-  // Compute radius for each month ring (1..12 growing outward from center core)
   const monthRadius = (m) => {
     if (mode === "canopy") {
-      const order = [prevM, todayM, nextM];
-      const idx = order.indexOf(Number(m));
-      if (idx === 0) return 110;
-      if (idx === 1) return 182;
-      if (idx === 2) return 254;
-      return 64;
+      const idx = edgeOrder.indexOf(Number(m));
+      const radii = [86, 140, 194, 248];
+      return idx >= 0 ? radii[idx] : 60;
     }
     return rInner + ((Number(m) - 1) / 11) * (rOuter - rInner);
   };
 
-  // Draw the 6 Cultural Sector divider spokes & outer labels
+  // 1. Subtle Seasonal "Wood-Grain" Concentric Bands (earlywood/latewood strata)
+  const seasonBandsSvg = [];
+  if (mode === "year") {
+    const bands = [
+      { r1: rInner - 8, r2: monthRadius(2) + 9, color: "#38bdf8", op: 0.055 }, // Winter
+      { r1: monthRadius(2) + 9, r2: monthRadius(5) + 9, color: "#34d399", op: 0.05 }, // Spring
+      { r1: monthRadius(5) + 9, r2: monthRadius(8) + 9, color: "#f59e0b", op: 0.05 }, // Summer
+      { r1: monthRadius(8) + 9, r2: rOuter + 10, color: "#a78bfa", op: 0.055 }, // Fall/Holiday
+    ];
+    bands.forEach((b) => {
+      const midR = (b.r1 + b.r2) / 2;
+      const sw = b.r2 - b.r1;
+      seasonBandsSvg.push(
+        `<circle cx="${cx}" cy="${cy}" r="${midR.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="${sw.toFixed(1)}" opacity="${b.op}" />`
+      );
+    });
+  } else {
+    // Highlight the active living cambium zone between Today and Next Month
+    const midR = (monthRadius(todayM) + monthRadius(wrapM(todayM + 1))) / 2;
+    seasonBandsSvg.push(
+      `<circle cx="${cx}" cy="${cy}" r="${midR.toFixed(1)}" fill="none" stroke="#10b981" stroke-width="54" opacity="0.065" />`
+    );
+  }
+
+  // 2. Draw the 6 Clickable Cultural Sector Spokes & Outer Rim Labels
   const sliceSvgs = [];
   slices.forEach((sl) => {
     const aStart = degToRad(sl.startDeg);
     const aMid = degToRad((sl.startDeg + sl.endDeg) / 2);
-    const p1 = polar(rInner - 8, aStart);
-    const p2 = polar(rOuter + 14, aStart);
+    const p1 = polar(rInner - 10, aStart);
+    const p2 = polar(rOuter + 16, aStart);
+    const isSliceActive = sliceFilter === sl.id;
+    const dimSlice = sliceFilter !== "ALL" && !isSliceActive;
+
     sliceSvgs.push(
-      `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(148,163,184,0.14)" stroke-width="1" />`
+      `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(148,163,184,0.16)" stroke-width="1" />`
     );
+
     const pLbl = polar(rSliceLbl, aMid);
+    const anchor = pLbl.x < cx - 60 ? "end" : pLbl.x > cx + 60 ? "start" : "middle";
+    const lblX = pLbl.x + (anchor === "end" ? 18 : anchor === "start" ? -18 : 0);
     sliceSvgs.push(
-      `<text x="${pLbl.x.toFixed(1)}" y="${(pLbl.y + 4).toFixed(1)}" text-anchor="middle" fill="${sl.color}" font-family="monospace" font-size="9.5" font-weight="800" letter-spacing="0.04em">${esc(sl.label)}</text>`
+      `<g class="tree-node-hit" data-tree-slice="${sl.id}" opacity="${dimSlice ? 0.32 : 1}">
+        <text x="${lblX.toFixed(1)}" y="${(pLbl.y + 4).toFixed(1)}" text-anchor="${anchor}" fill="${isSliceActive ? "#ffffff" : sl.color}" font-family="monospace" font-size="${isSliceActive ? "11.5" : "10.5"}" font-weight="900" letter-spacing="0.05em">${isSliceActive ? "★ " : ""}${esc(sl.label)}</text>
+      </g>`
     );
   });
 
-  // Draw the Concentric Tree Growth Rings (1 ring per month, growing outward from JAN core -> DEC outer bark)
+  // 3. Draw Clickable Concentric Tree Growth Rings
   const ringSvgs = [];
-  const visibleMonths = mode === "canopy" ? [prevM, todayM, nextM] : allBranches.map((b) => b.month);
+  const visibleMonths = mode === "canopy" ? edgeOrder : allBranches.map((b) => b.month);
   visibleMonths.forEach((m) => {
     const br = allBranches.find((b) => b.month === m);
     if (!br) return;
     const r = monthRadius(m);
     const isTodayRing = m === todayM;
-    const isFutureRing = m > todayM || (todayM === 12 && m === 1);
-    const strokeCol = isTodayRing ? "#34d399" : br.color;
-    const strokeW = isTodayRing ? 2.8 : 1.15;
-    const op = isTodayRing ? 0.95 : isFutureRing ? 0.45 : 0.35;
+    const isMonthSel = monthFilter === m;
+    const isFutureRing = mode === "canopy" ? edgeOrder.indexOf(m) > 1 : (m > todayM || (todayM === 12 && m === 1));
+    const strokeCol = isTodayRing ? "#34d399" : isMonthSel ? "#ffffff" : br.color;
+    const strokeW = isTodayRing ? 2.8 : isMonthSel ? 2.2 : 1.15;
+    const op = isTodayRing || isMonthSel ? 0.95 : isFutureRing ? 0.48 : 0.36;
     const dash = isFutureRing ? `stroke-dasharray="5 5"` : "";
 
     ringSvgs.push(
@@ -718,35 +750,35 @@ function renderCulturalTreeSection(tl) {
     );
     if (isTodayRing) {
       ringSvgs.push(
-        `<circle cx="${cx}" cy="${cy}" r="${(r + 4).toFixed(1)}" fill="none" stroke="#34d399" stroke-width="6" opacity="0.12" />`
+        `<circle cx="${cx}" cy="${cy}" r="${(r + 3).toFixed(1)}" fill="none" stroke="#34d399" stroke-width="6" opacity="0.14" />`
       );
     }
-    // Crisp month ring label aligned cleanly along the 12 o'clock seam
     const lblY = cy - r;
+    const tagTxt = isTodayRing ? `${br.name.toUpperCase()} · NOW` : br.name.toUpperCase();
+    const pillW = isTodayRing ? 66 : 36;
     ringSvgs.push(
-      `<rect x="${cx - 17}" y="${(lblY - 7).toFixed(1)}" width="34" height="13" rx="3" fill="${isTodayRing ? "#064e3b" : "#070b12"}" stroke="${isTodayRing ? "#34d399" : "none"}" stroke-width="0.9" opacity="0.92" />`
-    );
-    ringSvgs.push(
-      `<text x="${cx}" y="${(lblY + 3).toFixed(1)}" text-anchor="middle" fill="${isTodayRing ? "#ecfdf5" : br.color}" font-family="monospace" font-size="${isTodayRing ? "9" : "8"}" font-weight="800">${esc(br.name.toUpperCase())}</text>`
+      `<g class="tree-node-hit" data-tree-month="${m}">
+        <rect x="${(cx - pillW / 2).toFixed(1)}" y="${(lblY - 7).toFixed(1)}" width="${pillW}" height="14" rx="3.5" fill="${isTodayRing ? "#064e3b" : isMonthSel ? "#1e293b" : "#070b12"}" stroke="${isTodayRing ? "#34d399" : isMonthSel ? "#ffffff" : "rgba(148,163,184,0.22)"}" stroke-width="0.9" opacity="0.94" />
+        <text x="${cx}" y="${(lblY + 3.2).toFixed(1)}" text-anchor="middle" fill="${isTodayRing || isMonthSel ? "#ecfdf5" : br.color}" font-family="monospace" font-size="${isTodayRing ? "8.5" : "8"}" font-weight="800">${esc(tagTxt)}</text>
+      </g>`
     );
   });
 
-  // Place Leaves (Live Signals) and Buds (Future Holidays/Sports/Catalysts) onto their exact Month Ring & Cultural Slice!
+  // 4. First pass: compute exact coordinates for all visible nodes
   const nodeMap = {};
   const nodeCoords = {};
-  const leafSvgs = [];
-  const budSvgs = [];
+  const nodeSlice = {};
+  const orderedWaves = [];
 
   visibleMonths.forEach((m) => {
     const br = allBranches.find((b) => b.month === m);
     if (!br) return;
     const rRing = monthRadius(m);
 
-    // Group items in this month by slice so items in the same ring+slice fan cleanly without overlap
     const bucket = {};
     const combined = [
-      ...(br.leaves || []).slice(0, 12),
-      ...(br.buds || []).slice(0, 10),
+      ...(br.leaves || []).slice(0, mode === "canopy" ? 16 : 10),
+      ...(br.buds || []).slice(0, mode === "canopy" ? 12 : 8),
     ];
     combined.forEach((item) => {
       const sid = getSliceId(item);
@@ -756,60 +788,49 @@ function renderCulturalTreeSection(tl) {
 
     Object.entries(bucket).forEach(([sid, items]) => {
       const sl = sliceById[sid] || slices[0];
-      const span = sl.endDeg - sl.startDeg - 10; // leave breathing room from slice borders
+      const span = sl.endDeg - sl.startDeg - 12;
       const n = items.length;
       items.forEach((item, idx) => {
         const frac = n === 1 ? 0.5 : (idx + 0.5) / n;
-        const deg = sl.startDeg + 5 + frac * span;
+        const deg = sl.startDeg + 6 + frac * span;
         const rad = degToRad(deg);
-        // Subtle radial offset so leaves sit slightly inside the ring edge and buds sit right on the growth edge
-        const rOffset = item.node_type === "leaf" ? -4 : 3;
+        const rOffset = item.node_type === "leaf" ? -5 : 4;
         const p = polar(rRing + rOffset, rad);
         nodeCoords[item.id] = p;
         nodeMap[item.id] = item;
-        const isSel = hubState.selectedTreeNodeId === item.id;
-
-        if (item.node_type === "leaf") {
-          const rDot = Math.max(4.5, Math.min(8.0, (item.size || 6) * 0.68));
-          leafSvgs.push(
-            `<g class="tree-node-hit" data-tree-node="${esc(item.id)}">
-              ${item.is_today || isSel ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rDot + 5}" fill="${item.color}" opacity="0.28" />` : ""}
-              <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rDot}" fill="${item.color}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.2" : "1.1"}" />
-              <title>${esc(item.ticker)} (${esc(item.date)}) · CVS ${item.cvs_score} — ${esc(item.title || "")}</title>
-            </g>`
-          );
-        } else {
-          const isActive = item.window_status === "PEAK_NOW" || item.window_status === "SEED_NOW";
-          const fill =
-            item.window_status === "PEAK_NOW"
-              ? "#f59e0b"
-              : item.window_status === "SEED_NOW"
-              ? "#10b981"
-              : sl.color;
-          const rDot = isActive ? 7.2 : 5.0;
-          budSvgs.push(
-            `<g class="tree-node-hit" data-tree-node="${esc(item.id)}">
-              ${isActive ? `<circle class="tree-pulse-ring" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="10.5" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
-              <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rDot}" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.4" : "1.2"}" />
-              <title>${esc(item.name)} (${esc(item.date)} · ${item.days_until <= 0 ? "ACTIVE" : `T-${item.days_until}d`})</title>
-            </g>`
-          );
-        }
+        nodeSlice[item.id] = sid;
+        if (item.node_type === "bud") orderedWaves.push(item);
       });
     });
   });
 
-  // Default selected node: first active SEED_NOW/PEAK_NOW bud
+  // Sort waves for Prev/Next stepping (SEED_NOW & PEAK_NOW first, then chronological)
+  orderedWaves.sort((a, b) => {
+    const aAct = a.window_status === "PEAK_NOW" || a.window_status === "SEED_NOW" ? 0 : 1;
+    const bAct = b.window_status === "PEAK_NOW" || b.window_status === "SEED_NOW" ? 0 : 1;
+    if (aAct !== bAct) return aAct - bAct;
+    return Number(a.days_until || 999) - Number(b.days_until || 999);
+  });
+
   if (!hubState.selectedTreeNodeId || !nodeMap[hubState.selectedTreeNodeId]) {
-    const firstActive = Object.values(nodeMap).find(
-      (n) => n.node_type === "bud" && (n.window_status === "PEAK_NOW" || n.window_status === "SEED_NOW")
-    );
-    const firstAny = firstActive || Object.values(nodeMap)[0] || null;
-    hubState.selectedTreeNodeId = firstAny ? firstAny.id : null;
+    const firstChoice = orderedWaves[0] || Object.values(nodeMap)[0] || null;
+    hubState.selectedTreeNodeId = firstChoice ? firstChoice.id : null;
   }
   const selNode = hubState.selectedTreeNodeId ? nodeMap[hubState.selectedTreeNodeId] : null;
 
-  // Render Social Graph Edges growing outward & across sectors!
+  // Build connected neighborhood set for Spotlight dimming
+  const connectedIds = new Set();
+  if (selNode) {
+    connectedIds.add(selNode.id);
+    (sg.edges || []).forEach((ed) => {
+      if (ed.relation !== "signal_to_anchor") return;
+      if (ed.source === selNode.id && nodeMap[ed.target]) connectedIds.add(ed.target);
+      if (ed.target === selNode.id && nodeMap[ed.source]) connectedIds.add(ed.source);
+    });
+  }
+  const hasNeighborhood = connectedIds.size > 1;
+
+  // 5. Render Visible Social Graph Edges (active-window edges softly glowing by default; selected edges bright neon!)
   const chordSvgs = [];
   (sg.edges || []).forEach((ed) => {
     if (ed.relation !== "signal_to_anchor") return;
@@ -817,32 +838,107 @@ function renderCulturalTreeSection(tl) {
     const b = nodeCoords[ed.target];
     if (!a || !b) return;
     const isHit = selNode && (ed.source === selNode.id || ed.target === selNode.id);
-    const ctrlX = cx + (a.x + b.x - 2 * cx) * 0.35;
-    const ctrlY = cy + (a.y + b.y - 2 * cy) * 0.35;
+    const ctrlX = cx + (a.x + b.x - 2 * cx) * 0.36;
+    const ctrlY = cy + (a.y + b.y - 2 * cy) * 0.36;
+    const op = isHit ? 0.98 : hasNeighborhood ? 0.16 : 0.48;
     chordSvgs.push(
-      `<path class="tree-edge ${isHit ? "active" : ""}" opacity="${isHit ? 0.96 : 0.18}" d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${ctrlX.toFixed(1)} ${ctrlY.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" />`
+      `<path class="tree-edge ${isHit ? "active" : ""}" opacity="${op}" d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${ctrlX.toFixed(1)} ${ctrlY.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" />`
     );
   });
 
-  // Single crisp floating pill label ONLY for the selected node (guarantees zero text collisions!)
+  // 6. Render Distinct Node Shapes: ◆ Diamond = Live Signal, ● Circle = Holiday/Wave, ■ Square = Sports/Custom
+  const nodeSvgs = [];
+  Object.values(nodeMap).forEach((item) => {
+    const p = nodeCoords[item.id];
+    const sid = nodeSlice[item.id];
+    const sl = sliceById[sid] || slices[0];
+    const isSel = selNode && selNode.id === item.id;
+    const inNeighborhood = connectedIds.has(item.id);
+
+    const matchesSlice = sliceFilter === "ALL" || sid === sliceFilter;
+    const matchesMonth = !monthFilter || Number(item.month) === monthFilter;
+    let op = 1.0;
+    if (!matchesSlice || !matchesMonth) {
+      op = 0.15;
+    } else if (hasNeighborhood && !inNeighborhood) {
+      op = 0.32;
+    }
+
+    if (item.node_type === "leaf") {
+      // ◆ Diamond for Live Captured t_0 Signal
+      const d = Math.max(5.5, Math.min(9.5, (item.size || 6) * 0.78));
+      const pts = `${p.x.toFixed(1)},${(p.y - d).toFixed(1)} ${(p.x + d).toFixed(1)},${p.y.toFixed(1)} ${p.x.toFixed(1)},${(p.y + d).toFixed(1)} ${(p.x - d).toFixed(1)},${p.y.toFixed(1)}`;
+      nodeSvgs.push(
+        `<g class="tree-node-hit" data-tree-node="${esc(item.id)}" opacity="${isSel ? 1 : op}">
+          ${item.is_today || isSel ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${d + 4.5}" fill="${item.color}" opacity="0.28" />` : ""}
+          <polygon points="${pts}" fill="${item.color}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.2" : "1.1"}" />
+          <title>◆ ${esc(item.ticker)} (${esc(item.date)}) · CVS ${item.cvs_score} — ${esc(item.title || "")}</title>
+        </g>`
+      );
+    } else {
+      const isActive = item.window_status === "PEAK_NOW" || item.window_status === "SEED_NOW";
+      const isSportsOrCustom = item.scope === "sports" || item.is_custom;
+      const fill =
+        item.window_status === "PEAK_NOW"
+          ? "#f59e0b"
+          : item.window_status === "SEED_NOW"
+          ? "#10b981"
+          : sl.color;
+      if (isSportsOrCustom) {
+        // ■ Rounded Square for Pro/College Sports & Custom Catalysts
+        const sz = isActive ? 13 : 9.5;
+        nodeSvgs.push(
+          `<g class="tree-node-hit" data-tree-node="${esc(item.id)}" opacity="${isSel ? 1 : op}">
+            ${isActive ? `<circle class="tree-pulse-ring" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="11" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
+            <rect x="${(p.x - sz / 2).toFixed(1)}" y="${(p.y - sz / 2).toFixed(1)}" width="${sz}" height="${sz}" rx="2.5" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.4" : "1.2"}" />
+            <title>■ ${esc(item.name)} (${esc(item.date)} · ${item.days_until <= 0 ? "ACTIVE" : `T-${item.days_until}d`})</title>
+          </g>`
+        );
+      } else {
+        // ● Circle for Recurring Holidays & Cultural Waves
+        const rDot = isActive ? 7.5 : 5.4;
+        nodeSvgs.push(
+          `<g class="tree-node-hit" data-tree-node="${esc(item.id)}" opacity="${isSel ? 1 : op}">
+            ${isActive ? `<circle class="tree-pulse-ring" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="11" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
+            <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rDot}" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.4" : "1.2"}" />
+            <title>● ${esc(item.name)} (${esc(item.date)} · ${item.days_until <= 0 ? "ACTIVE" : `T-${item.days_until}d`})</title>
+          </g>`
+        );
+      }
+    }
+  });
+
+  // 7. Single crisp floating pill label ONLY for the selected node
   let selCalloutSvg = "";
   if (selNode && nodeCoords[selNode.id]) {
     const sp = nodeCoords[selNode.id];
-    const rawLbl = selNode.node_type === "leaf" ? `${selNode.ticker} · CVS ${selNode.cvs_score}` : String(selNode.name || "").replace(/^\[[A-Z]+\]\s*/, "");
-    const lbl = rawLbl.length > 26 ? rawLbl.slice(0, 25) + "…" : rawLbl;
-    const boxW = Math.max(96, lbl.length * 6.5 + 16);
-    const boxX = Math.max(12, Math.min(S - boxW - 12, sp.x - boxW / 2));
-    const boxY = sp.y > cy ? Math.min(S - 28, sp.y + 14) : Math.max(12, sp.y - 32);
+    const rawLbl = selNode.node_type === "leaf" ? `◆ ${selNode.ticker} · CVS ${selNode.cvs_score}` : String(selNode.name || "").replace(/^\[[A-Z]+\]\s*/, "");
+    const lbl = rawLbl.length > 28 ? rawLbl.slice(0, 27) + "…" : rawLbl;
+    const boxW = Math.max(100, lbl.length * 6.5 + 16);
+    const boxX = Math.max(14, Math.min(W - boxW - 14, sp.x - boxW / 2));
+    const boxY = sp.y > cy ? Math.min(H - 28, sp.y + 15) : Math.max(14, sp.y - 34);
     selCalloutSvg = `
       <g pointer-events="none">
-        <rect x="${boxX.toFixed(1)}" y="${boxY.toFixed(1)}" width="${boxW.toFixed(1)}" height="20" rx="5" fill="#0f172a" stroke="#34d399" stroke-width="1.2" opacity="0.96" />
-        <text x="${(boxX + boxW / 2).toFixed(1)}" y="${(boxY + 13.5).toFixed(1)}" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="10" font-weight="800">${esc(lbl)}</text>
+        <rect x="${boxX.toFixed(1)}" y="${boxY.toFixed(1)}" width="${boxW.toFixed(1)}" height="21" rx="5" fill="#0f172a" stroke="#34d399" stroke-width="1.3" opacity="0.96" />
+        <text x="${(boxX + boxW / 2).toFixed(1)}" y="${(boxY + 14).toFixed(1)}" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="10" font-weight="800">${esc(lbl)}</text>
       </g>
     `;
   }
 
-  // Build Inspector Card HTML for the selected ring node
-  let inspectorHtml = `<div style="color:#94a3b8;font-size:12px">Tap any ring node to inspect how live signals grow outward into upcoming cultural waves, Spotify cities, and client songs.</div>`;
+  // Prev/Next wave stepper indices
+  const curWaveIdx = selNode ? orderedWaves.findIndex((w) => w.id === selNode.id) : -1;
+  const prevWaveId = orderedWaves.length ? orderedWaves[(curWaveIdx - 1 + orderedWaves.length) % orderedWaves.length].id : "";
+  const nextWaveId = orderedWaves.length ? orderedWaves[(curWaveIdx + 1) % orderedWaves.length].id : "";
+  const stepperHtml = orderedWaves.length > 1
+    ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(51,65,85,0.6)">
+        <button type="button" class="btn-action" data-tree-step="${esc(prevWaveId)}" style="padding:3px 9px;font-size:10.5px">◀ Prev Wave</button>
+        <span style="font-family:monospace;font-size:10px;color:#94a3b8">${curWaveIdx >= 0 ? `WAVE ${curWaveIdx + 1} / ${orderedWaves.length}` : `${orderedWaves.length} WAVES`}</span>
+        <button type="button" class="btn-action green" data-tree-step="${esc(nextWaveId)}" style="padding:3px 9px;font-size:10.5px">Next Wave ▶</button>
+      </div>`
+    : "";
+
+  // Build Inspector Card HTML
+  let inspectorHtml = `${stepperHtml}<div style="color:#94a3b8;font-size:12px">Tap any ring node or use Prev/Next Wave to explore connections.</div>`;
   if (selNode) {
     const relatedEdges = (sg.edges || []).filter((e) => e.source === selNode.id || e.target === selNode.id);
     const cityEdges = relatedEdges.filter((e) => e.relation === "anchor_to_city");
@@ -852,8 +948,9 @@ function renderCulturalTreeSection(tl) {
     if (selNode.node_type === "leaf") {
       inspectorHtml = `
         <div>
+          ${stepperHtml}
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
-            <span class="pill green">⚡ RING SIGNAL · ${esc(selNode.date)}</span>
+            <span class="pill green">◆ LIVE SIGNAL · ${esc(selNode.date)}</span>
             <span class="pill" style="color:${selNode.color};border-color:${selNode.color}">${esc(selNode.sector)} · CVS ${selNode.cvs_score}</span>
           </div>
           <div style="font-size:15px;font-weight:800;color:#f8fafc;font-family:monospace;margin-bottom:4px">${esc(selNode.ticker)}</div>
@@ -879,10 +976,12 @@ function renderCulturalTreeSection(tl) {
       `;
     } else {
       const dLbl = selNode.days_until <= 0 ? "ACTIVE NOW" : `T-${selNode.days_until}d`;
+      const shapeIcon = selNode.scope === "sports" || selNode.is_custom ? "■" : "●";
       inspectorHtml = `
         <div>
+          ${stepperHtml}
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-            <span class="pill" style="color:#34d399;border-color:#10b981">🌱 ${esc(selNode.window_status)} · ${dLbl}</span>
+            <span class="pill" style="color:#34d399;border-color:#10b981">${shapeIcon} ${esc(selNode.window_status)} · ${dLbl}</span>
             <span class="pill">${esc(selNode.date)}</span>
           </div>
           <div style="font-size:14.5px;font-weight:800;color:#f8fafc;margin-bottom:4px">${esc(selNode.name)}</div>
@@ -910,7 +1009,7 @@ function renderCulturalTreeSection(tl) {
                   ${sigEdges
                     .map((e) => {
                       const lf = nodeMap[e.source];
-                      return `<div style="font-size:11px;color:#cbd5e1">⚡ <b style="color:#38bdf8">${esc(lf ? lf.ticker : e.source)}</b> — ${esc(e.label)}</div>`;
+                      return `<div style="font-size:11px;color:#cbd5e1">◆ <b style="color:#38bdf8">${esc(lf ? lf.ticker : e.source)}</b> — ${esc(e.label)}</div>`;
                     })
                     .join("")}
                 </div>`
@@ -928,43 +1027,46 @@ function renderCulturalTreeSection(tl) {
     <div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.45)">
       <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
         <span style="color:#34d399">🪵 CULTURAL GROWTH RINGS // ${sg.year} CORE → OUTWARD (${sg.stats.total_leaves} SIGNALS · ${sg.stats.total_buds} WAVES · ${sg.stats.total_edges} EDGES)</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="btn-action ${mode === "year" ? "green" : ""}" id="btn-tree-mode-year" style="padding:2px 8px;font-size:10.5px">🪵 Full Year Core (12 Rings)</button>
-          <button type="button" class="btn-action ${mode === "canopy" ? "cyan" : ""}" id="btn-tree-mode-canopy" style="padding:2px 8px;font-size:10.5px">🌱 Living Edge (90d)</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${sliceFilter !== "ALL" || monthFilter ? `<button type="button" class="btn-action amber" id="btn-tree-clear-filter" style="padding:2px 8px;font-size:10.5px">✕ Clear Ring/Slice Filter</button>` : ""}
+          <button type="button" class="btn-action ${mode === "canopy" ? "green" : ""}" id="btn-tree-mode-canopy" style="padding:2px 8px;font-size:10.5px">🌱 Living Edge (90d)</button>
+          <button type="button" class="btn-action ${mode === "year" ? "cyan" : ""}" id="btn-tree-mode-year" style="padding:2px 8px;font-size:10.5px">🪵 Full Year Core (12 Rings)</button>
         </div>
       </div>
       <div class="hub-card-body">
         <div class="tree-hero-grid">
           <div class="tree-canvas-wrap">
-            <svg class="tree-svg" viewBox="0 0 ${S} ${S}" role="img" aria-label="Cultural Tree Growth Rings Social Graph">
-              <!-- 6 Cultural Sector Spokes & Outer Labels -->
+            <svg class="tree-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cultural Tree Growth Rings Social Graph">
+              <!-- Subtle Seasonal Wood-Grain Strata -->
+              ${seasonBandsSvg.join("")}
+
+              <!-- 6 Clickable Cultural Sector Spokes & Outer Labels -->
               ${sliceSvgs.join("")}
 
-              <!-- Concentric Monthly Tree Growth Rings (JAN Core -> DEC Outer Ring) -->
+              <!-- Clickable Concentric Monthly Growth Rings -->
               ${ringSvgs.join("")}
 
               <!-- Social Graph Edges Growing Outward & Across Sectors -->
               ${chordSvgs.join("")}
 
-              <!-- Live Signal Dots on Past/Today Rings -->
-              ${leafSvgs.join("")}
-
-              <!-- Cultural & Sports Wave Dots on Rings -->
-              ${budSvgs.join("")}
+              <!-- Distinct Node Shapes: ◆ Signals, ● Holidays, ■ Sports/Custom -->
+              ${nodeSvgs.join("")}
 
               <!-- Tree Heartwood Core -->
               <circle cx="${cx}" cy="${cy}" r="28" fill="#070b12" stroke="rgba(16,185,129,0.55)" stroke-width="1.6" />
               <text x="${cx}" y="${cy - 2}" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="12" font-weight="900">${sg.year}</text>
-              <text x="${cx}" y="${cy + 11}" text-anchor="middle" fill="#34d399" font-family="monospace" font-size="7.5" font-weight="800">CORE</text>
+              <text x="${cx}" y="${cy + 11}" text-anchor="middle" fill="#34d399" font-family="monospace" font-size="7.5" font-weight="800">${mode === "canopy" ? "90D EDGE" : "CORE"}</text>
 
               <!-- Selected Node Floating Label (Zero Overlap) -->
               ${selCalloutSvg}
             </svg>
             <div class="tree-legend">
-              <span><b>Center → Outward:</b> JAN Core → TODAY (Glowing Ring) → Future Dashed Rings</span>
+              <span><b>◆</b> Live t₀ Signal</span>
+              <span><b>●</b> Holiday / Cultural Wave</span>
+              <span><b>■</b> Pro/College Sports &amp; Custom</span>
               <span><span class="tree-legend-dot" style="background:#10b981"></span>Seed Now</span>
               <span><span class="tree-legend-dot" style="background:#f59e0b"></span>Peak Now</span>
-              <span><span class="tree-legend-dot" style="background:#22d3ee"></span>Live Signal</span>
+              <span>Tip: Click any rim label or month ring to filter</span>
             </div>
           </div>
 
@@ -1200,6 +1302,34 @@ function renderTimelineView() {
       hubState.selectedTreeNodeId = nodeEl.dataset.treeNode;
       renderTimelineView();
     });
+  });
+  el.querySelectorAll("[data-tree-step]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      hubState.selectedTreeNodeId = btn.dataset.treeStep;
+      renderTimelineView();
+    });
+  });
+  el.querySelectorAll("[data-tree-slice]").forEach((sliceEl) => {
+    sliceEl.addEventListener("click", () => {
+      const clicked = sliceEl.dataset.treeSlice;
+      hubState.timelineTreeSliceFilter = hubState.timelineTreeSliceFilter === clicked ? "ALL" : clicked;
+      const scopeMap = { MUSIC: "music_industry", POP: "national", SPORTS: "sports", CREATORS: "custom", REGIONAL: "regional", ENT: "ALL" };
+      hubState.timelineScopeFilter = hubState.timelineTreeSliceFilter === "ALL" ? "ALL" : (scopeMap[hubState.timelineTreeSliceFilter] || "ALL");
+      renderTimelineView();
+    });
+  });
+  el.querySelectorAll("[data-tree-month]").forEach((mEl) => {
+    mEl.addEventListener("click", () => {
+      const m = Number(mEl.dataset.treeMonth);
+      hubState.timelineTreeMonthFilter = hubState.timelineTreeMonthFilter === m ? null : m;
+      renderTimelineView();
+    });
+  });
+  document.getElementById("btn-tree-clear-filter")?.addEventListener("click", () => {
+    hubState.timelineTreeSliceFilter = "ALL";
+    hubState.timelineTreeMonthFilter = null;
+    hubState.timelineScopeFilter = "ALL";
+    renderTimelineView();
   });
   document.getElementById("btn-tl-sync-sports").addEventListener("click", async () => {
     const btn = document.getElementById("btn-tl-sync-sports");
