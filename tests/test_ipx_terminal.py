@@ -880,6 +880,72 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertEqual(sync2["added_count"], 0)
         self.assertEqual(sync2["skipped_existing"], 2)
 
+    def test_tinder_swipe_brief_direct_dpo_and_handle_extraction(self) -> None:
+        from ipx_terminal.ai_scorer import _extract_relevant_handles
+        from ipx_terminal.exporter import export_creative_feedback
+
+        sig = self.db.insert_signal(
+            ticker="CHARL.MU",
+            title="Charli D'Amelio @charlidamelio sound trend blowing up",
+            summary="Creators tagging @charlidamelio and @pubity on TikTok.",
+            platforms=["TikTok"],
+            metrics={"views": 500_000, "likes": 45_000, "shares": 12_000, "follower_baseline": 50_000},
+            url="https://www.tiktok.com/@charlidamelio/video/7400000000",
+            sector="MUSIC",
+        )
+        handles = _extract_relevant_handles(sig)
+        self.assertIn("@charlidamelio", handles)
+        self.assertIn("@pubity", handles)
+
+        b_left = self.db.create_brief(
+            signal_id=sig["id"],
+            target_platform="TikTok",
+            angle="Robotic AI draft",
+            hook_2s="Wait until the end!",
+            on_screen_text="This song hits different!",
+            caption="Drop a comment below 🚀✨💯🔥",
+            audio_cue="Play chorus at 0:04",
+            model_used="test-model",
+        )
+        b_right = self.db.create_brief(
+            signal_id=sig["id"],
+            target_platform="TikTok",
+            angle="Human cultural storytelling draft",
+            hook_2s="Cold open on POV receipt cutting right on the chorus drop",
+            on_screen_text="POV: @charlidamelio just ruined my entire playlist",
+            caption="Watching @charlidamelio accidentally launch the song of the month while everyone pretends they knew it first 💀",
+            audio_cue="Chorus hit at 0:02",
+            model_used="test-model",
+        )
+
+        swiped_l = self.db.swipe_brief(
+            brief_id=b_left["id"],
+            direction="left",
+            feedback_note="Way too robotic and emoji spam. Tell a story and tag @charlidamelio.",
+            feedback_tags=["too_robotic", "overdid_emojis", "add_handle"],
+            revised_caption="Wait because @charlidamelio really just hijacked the whole FYP with this sound 💀",
+        )
+        self.assertEqual(swiped_l["verdict"], "flop")
+        self.assertEqual(swiped_l["swipe_direction"], "left")
+        self.assertIn("too_robotic", swiped_l["feedback_tags"])
+
+        swiped_r = self.db.swipe_brief(
+            brief_id=b_right["id"],
+            direction="right",
+            feedback_note="Great narrative caption and single well-timed skull emoji.",
+            feedback_tags=["fire_caption"],
+        )
+        self.assertEqual(swiped_r["verdict"], "winner")
+        self.assertEqual(swiped_r["swipe_direction"], "right")
+
+        out_dir = Path(self._tmp.name) / "swipe-dpo"
+        exp = export_creative_feedback(self.db, out_dir=out_dir)
+        self.assertEqual(exp["winners_count"], 1)
+        self.assertEqual(exp["flops_count"], 1)
+        self.assertEqual(exp["pairs_exported"], 1)
+        self.assertEqual(exp["direct_dpo_pairs"], 1)
+        self.assertTrue(Path(exp["dpo_direct_path"]).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.request
 
@@ -222,6 +222,51 @@ def _fallback_brief_template(
     }
 
 
+def _extract_relevant_handles(signal: Dict[str, Any], project: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Extract pertinent @handles from signal URL, text, samples, and client project roster."""
+    handles: List[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str) -> None:
+        h = raw.strip().lstrip("@").strip(".,:;!?()[]'\"/")
+        if not h or len(h) < 2 or len(h) > 32:
+            return
+        if h.lower() in ("video", "reel", "reels", "shorts", "status", "p", "watch", "channel"):
+            return
+        tag = f"@{h}"
+        if tag.lower() not in seen:
+            seen.add(tag.lower())
+            handles.append(tag)
+
+    text_blob = " ".join(
+        [
+            str(signal.get("title") or ""),
+            str(signal.get("summary") or ""),
+            " ".join(str(s) for s in (signal.get("samples") or [])),
+            " ".join(str(e) for e in (signal.get("entities_mentioned") or [])),
+        ]
+    )
+    for m in re.findall(r"@([A-Za-z0-9._]{2,30})", text_blob):
+        _add(m)
+
+    url = str(signal.get("url") or "")
+    for pat in (
+        r"tiktok\.com/@([A-Za-z0-9._]{2,30})",
+        r"youtube\.com/@([A-Za-z0-9._-]{2,30})",
+        r"(?:twitter|x)\.com/([A-Za-z0-9_]{2,30})",
+        r"instagram\.com/([A-Za-z0-9._]{2,30})",
+    ):
+        for m in re.findall(pat, url):
+            _add(m)
+
+    if project:
+        for ent in project.get("roster_entities") or []:
+            for alias in ent.get("aliases") or []:
+                if str(alias).strip().startswith("@"):
+                    _add(str(alias))
+    return handles[:8]
+
+
 def generate_creative_brief(
     signal: Dict[str, Any],
     target_platform: str = "TikTok",
@@ -284,12 +329,21 @@ def generate_creative_brief(
         "You are an elite viral short-form creative director & music trend strategist for TikTok, Instagram Reels, "
         "YouTube Shorts, and X. Our core goal for music clients is SONG-SEEDING & TREND CREATION: designing "
         "replicable POV, meme, CapCut-template, or reaction formats that put a client's song behind the video "
-        "so viewers tap 'Use This Sound' and make their own versions. Never write corporate/AI-sounding hooks, "
-        "cringe emojis, or generic 'Wait until the end!' clickbait. Return STRICT JSON with keys: "
+        "so viewers tap 'Use This Sound' and make their own versions.\n"
+        "STRICT ANTI-SLOP & VOICE RULES:\n"
+        "- Sound like a culturally fluent, chronically online human running a top meme/music page — NEVER robotic, "
+        "out of touch, corporate, or cringey ('Wait until the end!', 'Drop a comment below!', 'This hits different!').\n"
+        "- STORYTELLING CAPTION: Tell a quick story/narrative in the caption that frames the moment and makes the "
+        "viewer feel in on the joke. Include real '@handles' of the people, creators, characters, or artists involved "
+        "when pertinent (only use real handles from the signal/roster — never invent fake handles).\n"
+        "- APPLE EMOJI DISCIPLINE: Use standard Apple emojis (e.g. 💀, 😭, 🫠, 👀, 🫡, 😮‍💨, 🚩, 🗣️) SPARINGLY (0 to 2 max "
+        "per caption) strictly for timely comedic relief or emotional punctuation that matches the post's exact theme. "
+        "NEVER overdo emojis or use corporate AI-slop combos (no 🚀✨💯🙌).\n"
+        "Return STRICT JSON with keys: "
         "'angle' (string: replicable trend/POV format concept), "
         "'hook_2s' (string: 0.0-2.0s visual/audio scroll-stop), "
         "'on_screen_text' (string, <=12 words, relatable template text viewers can copy), "
-        "'caption' (string, native & share-triggering), "
+        "'caption' (string: narrative/story-driven, includes pertinent @handles when relevant, 0-2 well-timed Apple emojis max), "
         "'edit_beats' (list of 3-4 concise timed beat strings including exact beat-drop/chorus hit), and "
         "'audio_cue' (string: exact song placement, beat-drop timing, and why viewers will click 'Use This Sound')."
     )
@@ -306,11 +360,18 @@ def generate_creative_brief(
             "If relevant, tie the video angle/hook subtly into the active seasonal mood or upcoming holiday/event wave.\n"
         )
 
+    relevant_handles = _extract_relevant_handles(signal, project=project)
+    handles_line = (
+        f"Pertinent @Handles (tag in caption if it strengthens the story): {', '.join(relevant_handles)}\n"
+        if relevant_handles
+        else ""
+    )
     user_prompt = (
         f"Target Platform: {target_platform}\n"
         f"IP Ticker: {signal['ticker']} ({signal['sector']})\n"
         f"Signal Title: {signal['title']}\n"
         f"t_0 Summary: {signal['summary']}\n"
+        f"{handles_line}"
         f"Verbatim Samples: {json.dumps(signal.get('samples', []), ensure_ascii=False)}\n"
         f"Metrics: {json.dumps(signal.get('metrics', {}), ensure_ascii=False)}\n"
         f"{timeline_block}"

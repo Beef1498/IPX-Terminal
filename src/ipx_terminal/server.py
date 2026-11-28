@@ -684,6 +684,22 @@ def make_handler(db: TerminalDB) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"ok": True, "brief": brief}, status=HTTPStatus.CREATED)
                     return
 
+                if path.startswith("/api/briefs/") and path.endswith("/swipe"):
+                    brief_id = int(path[len("/api/briefs/") : -len("/swipe")].strip("/"))
+                    tags = body.get("feedback_tags") or []
+                    if isinstance(tags, str):
+                        tags = [t.strip() for t in tags.split(",") if t.strip()]
+                    swiped = db.swipe_brief(
+                        brief_id=brief_id,
+                        direction=str(body["direction"]),
+                        feedback_note=str(body.get("feedback_note") or body.get("outcome_notes") or ""),
+                        feedback_tags=tags,
+                        revised_caption=str(body.get("revised_caption") or ""),
+                        revised_hook=str(body.get("revised_hook") or ""),
+                    )
+                    self._send_json({"ok": True, "brief": swiped})
+                    return
+
                 if path.startswith("/api/briefs/") and path.endswith("/grade"):
                     brief_id = int(path[len("/api/briefs/") : -len("/grade")].strip("/"))
                     def _opt_int(key: str) -> Optional[int]:

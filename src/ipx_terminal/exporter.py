@@ -283,13 +283,61 @@ def export_creative_feedback(
             encoding="utf-8",
         )
 
+    # 3. Direct Human-Edited DPO Pairs (from Tinder Swipe Deck quick-edits & improvement notes)
+    dpo_direct: List[Dict[str, Any]] = []
+    for idx, b in enumerate(graded, start=1):
+        rev_cap = str(b.get("revised_caption") or "").strip()
+        rev_hook = str(b.get("revised_hook") or "").strip()
+        if not rev_cap and not rev_hook:
+            continue
+        orig_payload = {
+            "angle": b["angle"],
+            "hook_2s": b["hook_2s"],
+            "on_screen_text": b["on_screen_text"],
+            "caption": b["caption"],
+            "audio_cue": b["audio_cue"],
+        }
+        chosen_payload = {
+            **orig_payload,
+            "hook_2s": rev_hook or b["hook_2s"],
+            "caption": rev_cap or b["caption"],
+        }
+        dpo_direct.append(
+            {
+                "id": f"ipx-swipe_dpo-{idx:03d}",
+                "version": version,
+                "source": "human_swipe_edit",
+                "ticker": b["ticker"],
+                "platform": b["target_platform"],
+                "swipe_direction": b.get("swipe_direction") or ("right" if b["verdict"] == "winner" else "left"),
+                "feedback_tags": b.get("feedback_tags") or [],
+                "human_edit_note": b.get("outcome_notes") or "",
+                "prompt": (
+                    f"Draft a native, non-robotic {b['target_platform']} creative brief for {b['ticker']} "
+                    f"({b.get('signal_title') or b['angle']}) with narrative captioning, pertinent @handles, "
+                    f"and restrained Apple emoji use (0-2 max)."
+                ),
+                "chosen": json.dumps(chosen_payload, ensure_ascii=False),
+                "rejected": json.dumps(orig_payload, ensure_ascii=False),
+            }
+        )
+
+    dpo_direct_path = target_dir / "creative_dpo_direct.jsonl"
+    if dpo_direct:
+        dpo_direct_path.write_text(
+            "\n".join(json.dumps(d, ensure_ascii=False) for d in dpo_direct) + "\n",
+            encoding="utf-8",
+        )
+
     return {
         "out_dir": str(target_dir),
         "graded_count": len(graded),
         "winners_count": len(winners),
         "flops_count": len(flops),
         "pairs_exported": len(pairs),
+        "direct_dpo_pairs": len(dpo_direct),
         "ledger_path": str(ledger_path) if ledger_lines else None,
         "pairs_path": str(pairs_path) if pairs else None,
+        "dpo_direct_path": str(dpo_direct_path) if dpo_direct else None,
         "preview_jsonl": "\n".join(json.dumps(p, ensure_ascii=False) for p in pairs[:2]),
     }

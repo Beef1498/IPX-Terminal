@@ -394,17 +394,292 @@ function renderDesk() {
   }
 
   if (state.activeTab === "BRIEFS") {
+    if (typeof state.briefsViewMode === "undefined") {
+      state.briefsViewMode = window.innerWidth <= 820 ? "swipe" : "swipe";
+    }
+    if (typeof state.swipeSkippedIds === "undefined") {
+      state.swipeSkippedIds = [];
+    }
+    const draftBriefs = state.briefs.filter((b) => b.status !== "graded" && !state.swipeSkippedIds.includes(b.id));
+    const allDraftsCount = state.briefs.filter((b) => b.status !== "graded").length;
     const exportBar = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap">
-        <span style="font-family:monospace;font-size:11px;color:#94a3b8">CREATIVE BRIEFS &amp; CONTENT FACTORY FEEDBACK (${state.briefs.length})</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-family:monospace;font-size:11px;color:#94a3b8">BRIEFS (${state.briefs.length} · ${allDraftsCount} TO SWIPE)</span>
+          <button type="button" class="btn-action ${state.briefsViewMode === "swipe" ? "green" : ""}" id="btn-briefs-mode-swipe" style="padding:3px 8px;font-size:10.5px">🔥 Swipe Deck</button>
+          <button type="button" class="btn-action ${state.briefsViewMode === "list" ? "cyan" : ""}" id="btn-briefs-mode-list" style="padding:3px 8px;font-size:10.5px">☰ List</button>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="btn-action cyan" id="btn-auto-ab-creator">+ Auto-Pair Creator A/B</button>
-          <button type="button" class="btn-action amber" id="btn-export-creative">Export Winner/Flop A/B Pairs</button>
+          <button type="button" class="btn-action cyan" id="btn-auto-ab-creator">+ Auto-Pair A/B</button>
+          <button type="button" class="btn-action amber" id="btn-export-creative">Export DPO Pairs</button>
         </div>
       </div>
       ${state.lastAutoAb ? `<div style="font-family:monospace;font-size:11px;color:#22d3ee;margin-bottom:8px">✓ ScrapeCreators fetched ${state.lastAutoAb.posts_fetched} posts for ${esc(state.lastAutoAb.handle)} (${esc(state.lastAutoAb.platform)}) → built ${state.lastAutoAb.pairs_created} blind A/B pairs → ${esc(state.lastAutoAb.out_path || "none")}</div>` : ""}
-      ${state.lastCreativeExport ? `<div style="font-family:monospace;font-size:11px;color:#34d399;margin-bottom:8px">✓ Exported ${state.lastCreativeExport.graded_count} graded briefs &amp; ${state.lastCreativeExport.pairs_exported} blind A/B pairs → ${esc(state.lastCreativeExport.out_dir)}</div>` : ""}
+      ${state.lastCreativeExport ? `<div style="font-family:monospace;font-size:11px;color:#34d399;margin-bottom:8px">✓ Exported ${state.lastCreativeExport.graded_count} graded briefs · ${state.lastCreativeExport.pairs_exported} A/B pairs · ${state.lastCreativeExport.direct_dpo_pairs || 0} direct human-edit DPO pairs → ${esc(state.lastCreativeExport.out_dir)}</div>` : ""}
     `;
+
+    const bindTopBriefButtons = () => {
+      document.getElementById("btn-briefs-mode-swipe").addEventListener("click", () => {
+        state.briefsViewMode = "swipe";
+        renderDesk();
+      });
+      document.getElementById("btn-briefs-mode-list").addEventListener("click", () => {
+        state.briefsViewMode = "list";
+        renderDesk();
+      });
+      document.getElementById("btn-auto-ab-creator").addEventListener("click", () => {
+        openAutoAbModal();
+      });
+      document.getElementById("btn-export-creative").addEventListener("click", async () => {
+        try {
+          state.lastCreativeExport = await api("/api/briefs/export", {
+            method: "POST",
+            body: JSON.stringify({ version: "0.5" }),
+          });
+          setStatus(`Exported ${state.lastCreativeExport.pairs_exported} A/B + ${state.lastCreativeExport.direct_dpo_pairs || 0} direct DPO pairs -> ${state.lastCreativeExport.out_dir}`);
+          renderDesk();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      });
+    };
+
+    if (state.briefsViewMode === "swipe") {
+      const queue = draftBriefs.length ? draftBriefs : (state.swipeReviewAll ? state.briefs.filter((b) => !state.swipeSkippedIds.includes(b.id)) : []);
+      const cur = queue[0];
+      if (!cur) {
+        body.innerHTML = exportBar + `
+          <div class="swipe-deck-wrap" style="text-align:center;padding:22px 12px;border:1px dashed #2e3d52;border-radius:12px">
+            <div style="font-size:22px;margin-bottom:6px">🎉</div>
+            <div style="font-weight:700;color:#f8fafc;margin-bottom:4px">All draft briefs graded!</div>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Every swipe + edit note is saved for DPO fine-tuning. Click <b>Export DPO Pairs</b> above to package them for DGX Spark.</div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              ${state.swipeSkippedIds.length ? `<button type="button" class="btn-action cyan" id="btn-swipe-reset-skips">Review ${state.swipeSkippedIds.length} Skipped</button>` : ""}
+              ${state.briefs.length ? `<button type="button" class="btn-action" id="btn-swipe-review-all">Re-Swipe All (${state.briefs.length})</button>` : ""}
+              <button type="button" class="btn-action amber" id="btn-swipe-to-list">Open List View</button>
+            </div>
+          </div>
+        `;
+        bindTopBriefButtons();
+        document.getElementById("btn-swipe-reset-skips")?.addEventListener("click", () => { state.swipeSkippedIds = []; renderDesk(); });
+        document.getElementById("btn-swipe-review-all")?.addEventListener("click", () => { state.swipeSkippedIds = []; state.swipeReviewAll = true; renderDesk(); });
+        document.getElementById("btn-swipe-to-list")?.addEventListener("click", () => { state.briefsViewMode = "list"; renderDesk(); });
+        return;
+      }
+
+      const tasteChips = [
+        { id: "too_robotic", label: "🤖 Too robotic" },
+        { id: "cringey", label: "😬 Cringey / out of touch" },
+        { id: "overdid_emojis", label: "😀 Overdid emojis" },
+        { id: "add_handle", label: "🏷️ Add @handle" },
+        { id: "fire_caption", label: "🔥 Fire caption" },
+        { id: "weak_hook", label: "🎯 Weak 2s hook" },
+        { id: "great_song_fit", label: "🎵 Great song fit" },
+        { id: "tighten_beats", label: "✂️ Tighten beats" },
+      ];
+      const beatsHtml = (cur.edit_beats || [])
+        .map((bt) => `<li style="margin:2px 0;color:#cbd5e1;font-size:11.5px">${esc(bt)}</li>`)
+        .join("");
+
+      body.innerHTML = exportBar + `
+        <div class="swipe-deck-wrap">
+          <div class="swipe-deck-meta">
+            <span>CARD 1 OF ${queue.length} · DRAG RIGHT = SHIP / LEFT = PASS</span>
+            <span style="color:#34d399">${state.briefs.filter((b) => b.status === "graded").length} GRADED FOR DPO</span>
+          </div>
+          <div class="swipe-stage">
+            <div class="swipe-card" id="active-swipe-card">
+              <div class="swipe-stamp right" id="stamp-right">♥ SHIP</div>
+              <div class="swipe-stamp left" id="stamp-left">✕ PASS</div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                <span><b style="color:#f59e0b;font-family:monospace">${esc(cur.ticker)}</b> · <span class="pill cyan">${esc(cur.target_platform)}</span></span>
+                <span class="pill" style="color:#94a3b8">${esc(cur.model_used)}</span>
+              </div>
+
+              <div style="font-size:15px;font-weight:800;color:#f8fafc;line-height:1.3;margin-bottom:6px">${esc(cur.on_screen_text)}</div>
+              <div style="font-size:11.5px;color:#94a3b8;margin-bottom:6px"><b>Angle:</b> ${esc(cur.angle)}</div>
+              <div style="font-size:12px;color:#e2e8f0;margin-bottom:4px"><b style="color:#22d3ee">2s Hook:</b> ${esc(cur.hook_2s)}</div>
+
+              <div class="swipe-caption-box">
+                <div style="font-family:monospace;font-size:9.5px;color:#38bdf8;margin-bottom:3px">CAPTION (STORY · @HANDLES · APPLE EMOJIS)</div>
+                <div>${esc(cur.caption)}</div>
+              </div>
+
+              ${cur.audio_cue ? `<div style="font-size:11.5px;color:#34d399;margin-bottom:6px"><b>🎵 Audio Cue:</b> ${esc(cur.audio_cue)}</div>` : ""}
+              ${beatsHtml ? `<details style="margin-bottom:8px"><summary style="cursor:pointer;font-family:monospace;font-size:10.5px;color:#94a3b8">Edit Beats (${cur.edit_beats.length})</summary><ul style="margin:4px 0 0;padding-left:16px">${beatsHtml}</ul></details>` : ""}
+
+              <div class="swipe-chips" id="swipe-chips">
+                ${tasteChips.map((c) => `<button type="button" class="swipe-chip" data-chip="${c.id}">${c.label}</button>`).join("")}
+              </div>
+
+              <input type="text" id="swipe-note-input" class="swipe-note-input" placeholder="Quick edit / improvement note (why it's good or what to fix)..." value="${esc(cur.outcome_notes || "")}" />
+
+              <details style="margin-top:7px">
+                <summary style="cursor:pointer;font-family:monospace;font-size:10.5px;color:#22d3ee">✏ Rewrite Caption / Hook (builds direct DPO pair for Gemma 4)</summary>
+                <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px">
+                  <textarea id="swipe-rev-caption" class="swipe-note-input" rows="2" placeholder="Improved caption with @handles & 0-2 Apple emojis...">${esc(cur.revised_caption || cur.caption || "")}</textarea>
+                  <input type="text" id="swipe-rev-hook" class="swipe-note-input" placeholder="Improved 2s hook (optional)..." value="${esc(cur.revised_hook || "")}" />
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <div class="swipe-actions">
+            <button type="button" class="swipe-btn pass" id="btn-swipe-left">✕ PASS</button>
+            <button type="button" class="swipe-btn skip" id="btn-swipe-skip">Skip ⏭</button>
+            <button type="button" class="swipe-btn ship" id="btn-swipe-right">♥ SHIP</button>
+          </div>
+        </div>
+      `;
+      bindTopBriefButtons();
+
+      const selectedTags = new Set(cur.feedback_tags || []);
+      body.querySelectorAll("[data-chip]").forEach((chip) => {
+        if (selectedTags.has(chip.dataset.chip)) chip.classList.add("active");
+        chip.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const id = chip.dataset.chip;
+          if (selectedTags.has(id)) {
+            selectedTags.delete(id);
+            chip.classList.remove("active");
+          } else {
+            selectedTags.add(id);
+            chip.classList.add("active");
+          }
+        });
+      });
+
+      const card = document.getElementById("active-swipe-card");
+      const stampR = document.getElementById("stamp-right");
+      const stampL = document.getElementById("stamp-left");
+
+      let submitting = false;
+      const submitSwipe = async (direction) => {
+        if (submitting) return;
+        submitting = true;
+        const note = (document.getElementById("swipe-note-input")?.value || "").trim();
+        const revCapRaw = (document.getElementById("swipe-rev-caption")?.value || "").trim();
+        const revCap = revCapRaw && revCapRaw !== (cur.caption || "").trim() ? revCapRaw : "";
+        const revHook = (document.getElementById("swipe-rev-hook")?.value || "").trim();
+
+        card.style.transition = "transform 0.24s ease, opacity 0.24s ease";
+        card.style.transform = `translateX(${direction === "right" ? 420 : -420}px) rotate(${direction === "right" ? 18 : -18}deg)`;
+        card.style.opacity = "0";
+        try {
+          const res = await api(`/api/briefs/${cur.id}/swipe`, {
+            method: "POST",
+            body: JSON.stringify({
+              direction,
+              feedback_note: note,
+              feedback_tags: Array.from(selectedTags),
+              revised_caption: revCap,
+              revised_hook: revHook,
+            }),
+          });
+          const idx = state.briefs.findIndex((b) => b.id === cur.id);
+          if (idx >= 0) state.briefs[idx] = res.brief;
+          setStatus(
+            `${direction === "right" ? "♥ SHIPPED" : "✕ PASSED"} brief #${cur.id} (${cur.ticker})${revCap || revHook ? " + saved direct DPO rewrite" : ""}.`
+          );
+          setTimeout(() => renderDesk(), 180);
+        } catch (err) {
+          submitting = false;
+          card.style.transform = "";
+          card.style.opacity = "1";
+          setStatus(`Swipe failed: ${err.message}`, true);
+        }
+      };
+
+      document.getElementById("btn-swipe-right").addEventListener("click", () => submitSwipe("right"));
+      document.getElementById("btn-swipe-left").addEventListener("click", () => submitSwipe("left"));
+      document.getElementById("btn-swipe-skip").addEventListener("click", () => {
+        state.swipeSkippedIds.push(cur.id);
+        renderDesk();
+      });
+
+      // Touch + Mouse drag physics (ignores inputs/buttons/details so typing works cleanly)
+      let startX = 0;
+      let startY = 0;
+      let dx = 0;
+      let dragging = false;
+      let lockedAxis = null;
+
+      const isInteractiveTarget = (t) =>
+        Boolean(t && t.closest("input, textarea, button, summary, details, a, select"));
+
+      const onStart = (x, y, target) => {
+        if (submitting || isInteractiveTarget(target)) return;
+        startX = x;
+        startY = y;
+        dx = 0;
+        dragging = true;
+        lockedAxis = null;
+        card.classList.add("dragging");
+      };
+      const onMove = (x, y) => {
+        if (!dragging) return;
+        const curDx = x - startX;
+        const curDy = y - startY;
+        if (!lockedAxis && (Math.abs(curDx) > 8 || Math.abs(curDy) > 8)) {
+          lockedAxis = Math.abs(curDx) > Math.abs(curDy) ? "x" : "y";
+        }
+        if (lockedAxis !== "x") return;
+        dx = curDx;
+        const rot = Math.max(-18, Math.min(18, dx * 0.06));
+        card.style.transform = `translateX(${dx}px) rotate(${rot}deg)`;
+        const ratio = Math.min(1, Math.abs(dx) / 95);
+        if (dx > 18) {
+          card.classList.add("hint-right");
+          card.classList.remove("hint-left");
+          stampR.style.opacity = String(ratio);
+          stampL.style.opacity = "0";
+        } else if (dx < -18) {
+          card.classList.add("hint-left");
+          card.classList.remove("hint-right");
+          stampL.style.opacity = String(ratio);
+          stampR.style.opacity = "0";
+        } else {
+          card.classList.remove("hint-right", "hint-left");
+          stampR.style.opacity = "0";
+          stampL.style.opacity = "0";
+        }
+      };
+      const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        card.classList.remove("dragging");
+        if (dx >= 90) {
+          submitSwipe("right");
+        } else if (dx <= -90) {
+          submitSwipe("left");
+        } else {
+          card.style.transform = "";
+          card.classList.remove("hint-right", "hint-left");
+          stampR.style.opacity = "0";
+          stampL.style.opacity = "0";
+        }
+      };
+
+      const handleMouseMove = (e) => onMove(e.clientX, e.clientY);
+      const handleMouseUp = () => {
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+        onEnd();
+      };
+      card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX, e.touches[0].clientY, e.target), { passive: true });
+      card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+      card.addEventListener("touchend", onEnd);
+      card.addEventListener("mousedown", (e) => {
+        onStart(e.clientX, e.clientY, e.target);
+        if (dragging) {
+          window.addEventListener("mousemove", handleMouseMove);
+          window.addEventListener("mouseup", handleMouseUp);
+        }
+      });
+      return;
+    }
+
     const cards = state.briefs.length
       ? state.briefs
           .map((b) => {
@@ -415,7 +690,14 @@ function renderDesk() {
                 : b.verdict === "flop"
                 ? "stage-echo_chamber"
                 : "badge-pending";
-            const badgeTxt = isGraded ? `POSTED · ${b.verdict.toUpperCase()}` : "DRAFT BRIEF";
+            const swipeTag = b.swipe_direction === "right" ? "♥ SWIPED RIGHT" : b.swipe_direction === "left" ? "✕ SWIPED LEFT" : `POSTED · ${(b.verdict || "").toUpperCase()}`;
+            const badgeTxt = isGraded ? swipeTag : "DRAFT BRIEF";
+            const tagsHtml = (b.feedback_tags || []).length
+              ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${b.feedback_tags.map((t) => `<span class="pill" style="font-size:9.5px">${esc(t)}</span>`).join("")}</div>`
+              : "";
+            const revHtml = b.revised_caption
+              ? `<div style="font-size:11px;color:#34d399;margin-top:3px"><b>✏ Human Rewrite:</b> ${esc(b.revised_caption)}</div>`
+              : "";
             const statsLine = isGraded
               ? `<div style="font-family:monospace;font-size:11px;color:#22d3ee;margin-top:4px">
                    48h: ${b.views_48h != null ? b.views_48h.toLocaleString() + " views" : "--"}
@@ -423,6 +705,8 @@ function renderDesk() {
                    ${b.share_to_like_pct != null ? ` · ${b.share_to_like_pct}% share/like` : ""}
                    ${b.account_handle ? ` · ${esc(b.account_handle)}` : ""}
                  </div>
+                 ${tagsHtml}
+                 ${revHtml}
                  <div style="color:#94a3b8;font-size:11.5px;margin-top:3px">${esc(b.outcome_notes)}</div>`
               : `<div style="margin-top:6px;display:flex;justify-content:flex-end">
                    <button type="button" class="btn-action green" data-grade-brief="${b.id}">Log 48h Post Outcome</button>
@@ -443,26 +727,12 @@ function renderDesk() {
           .join("")
       : `<div style="color:#8b9bb0">No Creative Briefs yet. Click <b>Brief</b> on any signal in <b>WIRE</b> to generate a hook, on-screen text, caption, and edit beats.</div>`;
     body.innerHTML = exportBar + cards;
+    bindTopBriefButtons();
     body.querySelectorAll("[data-grade-brief]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const brief = state.briefs.find((x) => x.id === Number(btn.dataset.gradeBrief));
         if (brief) openGradeBriefModal(brief);
       });
-    });
-    document.getElementById("btn-auto-ab-creator").addEventListener("click", () => {
-      openAutoAbModal();
-    });
-    document.getElementById("btn-export-creative").addEventListener("click", async () => {
-      try {
-        state.lastCreativeExport = await api("/api/briefs/export", {
-          method: "POST",
-          body: JSON.stringify({ version: "0.5" }),
-        });
-        setStatus(`Exported ${state.lastCreativeExport.pairs_exported} blind Winner-vs-Flop A/B pairs -> ${state.lastCreativeExport.out_dir}`);
-        renderDesk();
-      } catch (err) {
-        setStatus(err.message, true);
-      }
     });
     return;
   }

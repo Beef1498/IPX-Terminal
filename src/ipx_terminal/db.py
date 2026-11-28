@@ -213,6 +213,20 @@ class TerminalDB:
             for col_name, col_type in migrations:
                 if col_name not in cols:
                     conn.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type}")
+            # Safe schema migration for Tinder Swipe Deck / Human-in-the-Loop DPO columns on creative_briefs
+            brief_cols = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(creative_briefs)").fetchall()
+            }
+            brief_migrations = [
+                ("swipe_direction", "TEXT"),
+                ("feedback_tags_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("revised_caption", "TEXT NOT NULL DEFAULT ''"),
+                ("revised_hook", "TEXT NOT NULL DEFAULT ''"),
+            ]
+            for col_name, col_type in brief_migrations:
+                if col_name not in brief_cols:
+                    conn.execute(f"ALTER TABLE creative_briefs ADD COLUMN {col_name} {col_type}")
 
     # ------------------------------------------------------------------
     # Entities (Entity-Resolution IP Graph)
@@ -944,6 +958,51 @@ class TerminalDB:
             )
         return self.get_brief(brief_id)  # type: ignore[return-value]
 
+    def swipe_brief(
+        self,
+        brief_id: int,
+        direction: str,
+        feedback_note: str = "",
+        feedback_tags: Optional[Sequence[str]] = None,
+        revised_caption: str = "",
+        revised_hook: str = "",
+    ) -> Dict[str, Any]:
+        """Record a Tinder-style right (good/winner) or left (bad/flop) swipe with human edit notes for DPO."""
+        norm_dir = direction.strip().lower()
+        if norm_dir not in ("right", "left"):
+            raise ValueError("direction must be 'right' or 'left'")
+        if not self.get_brief(brief_id):
+            raise ValueError(f"Creative brief #{brief_id} not found")
+        verdict = "winner" if norm_dir == "right" else "flop"
+        tags = [str(t).strip() for t in (feedback_tags or []) if str(t).strip()]
+        now = utc_now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE creative_briefs SET
+                    status = 'graded',
+                    verdict = ?,
+                    swipe_direction = ?,
+                    feedback_tags_json = ?,
+                    revised_caption = ?,
+                    revised_hook = ?,
+                    outcome_notes = ?,
+                    graded_at = ?
+                WHERE id = ?
+                """,
+                (
+                    verdict,
+                    norm_dir,
+                    json.dumps(tags),
+                    revised_caption.strip(),
+                    revised_hook.strip(),
+                    feedback_note.strip(),
+                    now,
+                    brief_id,
+                ),
+            )
+        return self.get_brief(brief_id)  # type: ignore[return-value]
+
     def get_brief(self, brief_id: int) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
             row = conn.execute(
@@ -1022,6 +1081,10 @@ class TerminalDB:
             "breakout_ratio": breakout_ratio,
             "share_to_like_pct": share_to_like,
             "verdict": row["verdict"],
+            "swipe_direction": row["swipe_direction"] if "swipe_direction" in row.keys() else None,
+            "feedback_tags": json.loads(row["feedback_tags_json"] or "[]") if "feedback_tags_json" in row.keys() else [],
+            "revised_caption": row["revised_caption"] if "revised_caption" in row.keys() else "",
+            "revised_hook": row["revised_hook"] if "revised_hook" in row.keys() else "",
             "outcome_notes": row["outcome_notes"],
             "created_at": row["created_at"],
             "graded_at": row["graded_at"],
