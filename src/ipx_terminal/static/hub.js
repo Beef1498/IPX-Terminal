@@ -619,97 +619,110 @@ function renderCulturalTreeSection(tl) {
   const sg = tl.social_graph;
   if (!sg || !(sg.branches || []).length) return "";
 
-  const mode = hubState.timelineTreeMode || "year";
+  const mode = hubState.timelineTreeMode || "year"; // "year" (360° Full Year) | "canopy" (Active 90d Sweep Highlight)
   const todayM = Number(sg.today_month || 1);
+  const todayD = Number(sg.today_day || 1);
   const allBranches = sg.branches || [];
-  let visibleBranches = allBranches;
-  if (mode === "canopy") {
-    const prevM = todayM === 1 ? 12 : todayM - 1;
-    const nextM = todayM === 12 ? 1 : todayM + 1;
-    const order = [prevM, todayM, nextM];
-    visibleBranches = order.map((m) => allBranches.find((b) => b.month === m)).filter(Boolean);
-  }
 
-  const W = 820;
-  const H = mode === "canopy" ? 440 : 560;
-  const trunkX = W / 2;
-  const yBottom = H - 36;
-  const yTop = 44;
-  const count = Math.max(1, visibleBranches.length);
-  const stepY = count > 1 ? (yBottom - yTop) / (count - 1) : 0;
+  const S = 680;
+  const cx = S / 2;
+  const cy = S / 2;
+  const rOuterRim = 282;
+  const rMonthLbl = 306;
+  const rBudBase = 228;
+  const rLeafBase = 152;
+  const rCore = 58;
 
-  // Map every node to SVG coordinates for interactive clicks & glowing social-graph edges
+  // Convert (month 1..12, day 1..31) to angle in radians (Jan 1 = -90° / 12 o'clock, clockwise)
+  const dateToRad = (m, d) => {
+    const frac = ((Number(m) - 1) + (Math.max(1, Math.min(31, Number(d))) - 1) / 31) / 12;
+    return frac * Math.PI * 2 - Math.PI / 2;
+  };
+  const polar = (r, rad) => ({
+    x: cx + r * Math.cos(rad),
+    y: cy + r * Math.sin(rad),
+  });
+  const arcPath = (r, startRad, endRad) => {
+    const p1 = polar(r, startRad);
+    const p2 = polar(r, endRad);
+    const largeArc = (endRad - startRad + Math.PI * 2) % (Math.PI * 2) > Math.PI ? 1 : 0;
+    return `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  };
+
+  // Determine active 90-day months for "Active Sweep" focus mode
+  const prevM = todayM === 1 ? 12 : todayM - 1;
+  const nextM = todayM === 12 ? 1 : todayM + 1;
+  const activeSweepMonths = new Set([prevM, todayM, nextM]);
+
+  // Seasonal outer arcs + 12 month spokes & labels
+  const rimArcs = [];
+  const monthSpokes = [];
+  allBranches.forEach((br) => {
+    const m = br.month;
+    const aStart = dateToRad(m, 1);
+    const aEnd = dateToRad(m === 12 ? 13 : m + 1, 1);
+    const aMid = (aStart + aEnd) / 2;
+    const inSweep = mode !== "canopy" || activeSweepMonths.has(m);
+    const arcOp = inSweep ? (br.is_current_month ? 0.95 : 0.6) : 0.16;
+
+    rimArcs.push(
+      `<path d="${arcPath(rOuterRim, aStart + 0.02, aEnd - 0.02)}" fill="none" stroke="${br.color}" stroke-width="${br.is_current_month ? 6 : 4}" stroke-linecap="round" opacity="${arcOp}" />`
+    );
+
+    const pInner = polar(rCore + 4, aStart);
+    const pOuter = polar(rOuterRim - 6, aStart);
+    monthSpokes.push(
+      `<line x1="${pInner.x.toFixed(1)}" y1="${pInner.y.toFixed(1)}" x2="${pOuter.x.toFixed(1)}" y2="${pOuter.y.toFixed(1)}" stroke="rgba(148,163,184,0.12)" stroke-width="1" />`
+    );
+
+    const pLbl = polar(rMonthLbl, aMid);
+    monthSpokes.push(
+      `<text x="${pLbl.x.toFixed(1)}" y="${(pLbl.y + 4).toFixed(1)}" text-anchor="middle" fill="${br.is_current_month ? "#f8fafc" : br.color}" opacity="${inSweep ? 1 : 0.35}" font-family="monospace" font-size="${br.is_current_month ? "12.5" : "10.5"}" font-weight="${br.is_current_month ? "900" : "700"}">${esc(br.name.toUpperCase())}</text>`
+    );
+  });
+
+  // Today radar needle + 35-day Pre-Wave Seeding Sweep Wedge
+  const todayRad = dateToRad(todayM, todayD);
+  const sweepEndRad = todayRad + (35 / 365) * Math.PI * 2;
+  const pSweep1 = polar(rOuterRim - 4, todayRad);
+  const pSweep2 = polar(rOuterRim - 4, sweepEndRad);
+  const sweepWedgePath = `M ${cx} ${cy} L ${pSweep1.x.toFixed(1)} ${pSweep1.y.toFixed(1)} A ${rOuterRim - 4} ${rOuterRim - 4} 0 0 1 ${pSweep2.x.toFixed(1)} ${pSweep2.y.toFixed(1)} Z`;
+  const pNeedleTip = polar(rOuterRim - 2, todayRad);
+
+  // Place all buds & leaves on their clean concentric orbits (staggering radially to avoid overlap)
   const nodeMap = {};
   const nodeCoords = {};
-  const branchSvgs = [];
   const leafSvgs = [];
   const budSvgs = [];
 
-  let todayTrunkY = yBottom - ((todayM - 1) / 11) * (yBottom - yTop);
+  allBranches.forEach((br) => {
+    const inSweep = mode !== "canopy" || activeSweepMonths.has(br.month);
+    const dimOp = inSweep ? 1.0 : 0.2;
 
-  visibleBranches.forEach((br, idx) => {
-    const y = count > 1 ? yBottom - idx * stepY : (yBottom + yTop) / 2;
-    if (br.month === todayM) todayTrunkY = y;
-    const dir = idx % 2 === 0 ? -1 : 1; // alternate left/right off trunk
-    const limbLen = mode === "canopy" ? 290 : 250;
-    const endX = trunkX + dir * limbLen;
-    const endY = y - (mode === "canopy" ? 30 : 20);
-    const ctrlX = trunkX + dir * (limbLen * 0.48);
-    const ctrlY = y + 8;
-
-    const strokeW = br.is_current_month ? 4.2 : 2.6;
-    const op = br.is_current_month ? 0.95 : 0.65;
-    branchSvgs.push(
-      `<path d="M ${trunkX} ${y} Q ${ctrlX} ${ctrlY} ${endX} ${endY}" fill="none" stroke="${br.color}" stroke-width="${strokeW}" stroke-linecap="round" opacity="${op}" />`
-    );
-    // Month label at branch tip
-    const lblX = endX + dir * 10;
-    const anchor = dir < 0 ? "end" : "start";
-    branchSvgs.push(
-      `<text x="${lblX}" y="${endY + 4}" text-anchor="${anchor}" fill="${br.is_current_month ? "#f8fafc" : br.color}" font-family="monospace" font-size="${br.is_current_month ? "13" : "11"}" font-weight="800">${esc(br.name.toUpperCase())}${br.is_current_month ? " ●" : ""}</text>`
-    );
-
-    // Helper: point along quadratic Bezier at t in [0,1]
-    const ptOnBranch = (t) => {
-      const omt = 1 - t;
-      return {
-        x: omt * omt * trunkX + 2 * omt * t * ctrlX + t * t * endX,
-        y: omt * omt * y + 2 * omt * t * ctrlY + t * t * endY,
-      };
-    };
-
-    // Render Day-Leaves (captured live signals) along the upper side of the branch
-    const leaves = (br.leaves || []).slice(0, mode === "canopy" ? 16 : 9);
-    leaves.forEach((lf, li) => {
-      const t = Math.max(0.16, Math.min(0.92, 0.18 + (li / Math.max(1, leaves.length)) * 0.72));
-      const p = ptOnBranch(t);
-      const offsetY = (li % 2 === 0 ? -1 : 1) * (12 + (li % 3) * 5);
-      const lx = p.x;
-      const ly = p.y + offsetY;
-      nodeCoords[lf.id] = { x: lx, y: ly };
+    // Inner orbit: Day-Leaves (live t_0 signals)
+    (br.leaves || []).slice(0, 12).forEach((lf, li) => {
+      const ang = dateToRad(lf.month, lf.day) + ((li % 3) - 1) * 0.025;
+      const rad = rLeafBase + ((li % 3) - 1) * 16;
+      const p = polar(rad, ang);
+      nodeCoords[lf.id] = p;
       nodeMap[lf.id] = lf;
       const isSel = hubState.selectedTreeNodeId === lf.id;
-      const sz = lf.size || 7;
-      const angle = dir < 0 ? -35 + (li % 3) * 18 : 35 - (li % 3) * 18;
-      // Botanical teardrop leaf path
+      const r = Math.max(4.5, Math.min(8.5, (lf.size || 6) * 0.72));
       leafSvgs.push(
-        `<g class="tree-node-hit" data-tree-node="${esc(lf.id)}" transform="translate(${lx.toFixed(1)},${ly.toFixed(1)}) rotate(${angle})">
-          ${lf.is_today || isSel ? `<circle cx="0" cy="0" r="${sz + 5}" fill="${lf.color}" opacity="0.22" />` : ""}
-          <path d="M 0 ${-sz} C ${sz * 0.85} ${-sz * 0.35}, ${sz * 0.85} ${sz * 0.55}, 0 ${sz} C ${-sz * 0.85} ${sz * 0.55}, ${-sz * 0.85} ${-sz * 0.35}, 0 ${-sz} Z" fill="${lf.color}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "1.8" : "0.9"}" opacity="0.92" />
+        `<g class="tree-node-hit" data-tree-node="${esc(lf.id)}" opacity="${isSel ? 1 : dimOp}">
+          ${lf.is_today || isSel ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r + 5}" fill="${lf.color}" opacity="0.26" />` : ""}
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${lf.color}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.2" : "1.1"}" />
           <title>${esc(lf.ticker)} (${esc(lf.date)}) · CVS ${lf.cvs_score} — ${esc(lf.title || "")}</title>
         </g>`
       );
     });
 
-    // Render Future Buds / Blossoms (cultural anchors, sports, custom catalysts) along the branch
-    const buds = (br.buds || []).slice(0, mode === "canopy" ? 10 : 5);
-    buds.forEach((bd, bi) => {
-      const t = Math.max(0.22, Math.min(0.94, 0.24 + (bi / Math.max(1, buds.length)) * 0.68));
-      const p = ptOnBranch(t);
-      const offsetY = (bi % 2 === 0 ? -1 : 1) * (mode === "canopy" ? 26 : 18);
-      const bx = p.x;
-      const by = p.y + offsetY;
-      nodeCoords[bd.id] = { x: bx, y: by };
+    // Outer orbit: Future Cultural / Sports / Custom Buds
+    (br.buds || []).slice(0, 8).forEach((bd, bi) => {
+      const ang = dateToRad(bd.month, bd.day) + ((bi % 3) - 1) * 0.028;
+      const rad = rBudBase + ((bi % 3) - 1) * 18;
+      const p = polar(rad, ang);
+      nodeCoords[bd.id] = p;
       nodeMap[bd.id] = bd;
       const isSel = hubState.selectedTreeNodeId === bd.id;
       const isActive = bd.window_status === "PEAK_NOW" || bd.window_status === "SEED_NOW";
@@ -723,24 +736,18 @@ function renderCulturalTreeSection(tl) {
           : bd.scope === "regional"
           ? "#a78bfa"
           : "#64748b";
-      const r = isActive ? 7.5 : 5.5;
-      const shortName = String(bd.name || "").replace(/^\[[A-Z]+\]\s*/, "").slice(0, mode === "canopy" ? 22 : 16);
+      const r = isActive ? 7.5 : 5.2;
       budSvgs.push(
-        `<g class="tree-node-hit" data-tree-node="${esc(bd.id)}">
-          ${isActive ? `<circle class="tree-pulse-ring" cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="11" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
-          <circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${r}" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.2" : "1.2"}" />
-          ${
-            isActive || mode === "canopy" || isSel
-              ? `<text x="${(bx + dir * 10).toFixed(1)}" y="${(by + 3).toFixed(1)}" text-anchor="${dir < 0 ? "end" : "start"}" fill="${isActive || isSel ? "#f8fafc" : "#94a3b8"}" font-family="monospace" font-size="9.5" font-weight="${isActive ? "700" : "500"}">${esc(shortName)}</text>`
-              : ""
-          }
+        `<g class="tree-node-hit" data-tree-node="${esc(bd.id)}" opacity="${isSel || isActive ? 1 : dimOp}">
+          ${isActive ? `<circle class="tree-pulse-ring" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="11" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.4" : "1.2"}" />
           <title>${esc(bd.name)} (${esc(bd.date)} · ${bd.days_until <= 0 ? "ACTIVE" : `T-${bd.days_until}d`})</title>
         </g>`
       );
     });
   });
 
-  // Default selected node: first active SEED_NOW/PEAK_NOW bud or first leaf
+  // Default selected node: first active SEED_NOW/PEAK_NOW bud
   if (!hubState.selectedTreeNodeId || !nodeMap[hubState.selectedTreeNodeId]) {
     const firstActive = Object.values(nodeMap).find(
       (n) => n.node_type === "bud" && (n.window_status === "PEAK_NOW" || n.window_status === "SEED_NOW")
@@ -750,23 +757,41 @@ function renderCulturalTreeSection(tl) {
   }
   const selNode = hubState.selectedTreeNodeId ? nodeMap[hubState.selectedTreeNodeId] : null;
 
-  // Render Glowing Social Graph Edges (signal_to_anchor arcs)
-  const edgeSvgs = [];
+  // Clean Glowing Chord Curves across the radar center (only bright for the selected node; whisper-subtle otherwise)
+  const chordSvgs = [];
   (sg.edges || []).forEach((ed) => {
     if (ed.relation !== "signal_to_anchor") return;
     const a = nodeCoords[ed.source];
     const b = nodeCoords[ed.target];
     if (!a || !b) return;
     const isHit = selNode && (ed.source === selNode.id || ed.target === selNode.id);
-    const midX = (a.x + b.x) / 2;
-    const midY = Math.min(a.y, b.y) - 28;
-    edgeSvgs.push(
-      `<path class="tree-edge ${isHit ? "active" : ""}" d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${midX.toFixed(1)} ${midY.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" />`
+    // Pull control point gently toward center for sleek radial chord arcs
+    const ctrlX = cx + (a.x + b.x - 2 * cx) * 0.18;
+    const ctrlY = cy + (a.y + b.y - 2 * cy) * 0.18;
+    chordSvgs.push(
+      `<path class="tree-edge ${isHit ? "active" : ""}" opacity="${isHit ? 0.95 : 0.22}" d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${ctrlX.toFixed(1)} ${ctrlY.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" />`
     );
   });
 
+  // Floating pill callout ONLY for the single selected node (guarantees zero label overlap!)
+  let selCalloutSvg = "";
+  if (selNode && nodeCoords[selNode.id]) {
+    const sp = nodeCoords[selNode.id];
+    const rawLbl = selNode.node_type === "leaf" ? `${selNode.ticker} · CVS ${selNode.cvs_score}` : String(selNode.name || "").replace(/^\[[A-Z]+\]\s*/, "");
+    const lbl = rawLbl.length > 26 ? rawLbl.slice(0, 25) + "…" : rawLbl;
+    const boxW = Math.max(96, lbl.length * 6.5 + 16);
+    const boxX = Math.max(12, Math.min(S - boxW - 12, sp.x - boxW / 2));
+    const boxY = sp.y > cy ? Math.min(S - 28, sp.y + 14) : Math.max(12, sp.y - 32);
+    selCalloutSvg = `
+      <g pointer-events="none">
+        <rect x="${boxX.toFixed(1)}" y="${boxY.toFixed(1)}" width="${boxW.toFixed(1)}" height="20" rx="5" fill="#0f172a" stroke="#34d399" stroke-width="1.2" opacity="0.96" />
+        <text x="${(boxX + boxW / 2).toFixed(1)}" y="${(boxY + 13.5).toFixed(1)}" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="10" font-weight="800">${esc(lbl)}</text>
+      </g>
+    `;
+  }
+
   // Build Inspector Card HTML for the selected leaf or bud
-  let inspectorHtml = `<div style="color:#94a3b8;font-size:12px">Tap any glowing leaf (captured signal) or bud (upcoming holiday / sports wave) on the tree to inspect its social graph connections.</div>`;
+  let inspectorHtml = `<div style="color:#94a3b8;font-size:12px">Tap any glowing dot on the 360° Year Radar to illuminate its social-graph chords, Spotify cities, and matched client tracks.</div>`;
   if (selNode) {
     const relatedEdges = (sg.edges || []).filter((e) => e.source === selNode.id || e.target === selNode.id);
     const cityEdges = relatedEdges.filter((e) => e.relation === "anchor_to_city");
@@ -777,7 +802,7 @@ function renderCulturalTreeSection(tl) {
       inspectorHtml = `
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
-            <span class="pill green">🍃 DAY LEAF · ${esc(selNode.date)}</span>
+            <span class="pill green">⚡ LIVE SIGNAL · ${esc(selNode.date)}</span>
             <span class="pill" style="color:${selNode.color};border-color:${selNode.color}">${esc(selNode.sector)} · CVS ${selNode.cvs_score}</span>
           </div>
           <div style="font-size:15px;font-weight:800;color:#f8fafc;font-family:monospace;margin-bottom:4px">${esc(selNode.ticker)}</div>
@@ -786,7 +811,7 @@ function renderCulturalTreeSection(tl) {
           ${
             sigEdges.length
               ? `<div style="padding:7px 9px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:7px;margin-bottom:8px">
-                  <div style="font-family:monospace;font-size:9.5px;color:#34d399;margin-bottom:4px">↳ GROWING TOWARD UPCOMING WAVES (${sigEdges.length})</div>
+                  <div style="font-family:monospace;font-size:9.5px;color:#34d399;margin-bottom:4px">↳ CONNECTED UPCOMING WAVES (${sigEdges.length})</div>
                   ${sigEdges
                     .map((e) => {
                       const targetBud = nodeMap[e.target];
@@ -794,7 +819,7 @@ function renderCulturalTreeSection(tl) {
                     })
                     .join("")}
                 </div>`
-              : `<div style="font-size:11px;color:#64748b">No direct holiday/sports edge linked yet — organic standalone signal leaf.</div>`
+              : `<div style="font-size:11px;color:#64748b">Standalone organic signal — no direct holiday/sports chord yet.</div>`
           }
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -806,7 +831,7 @@ function renderCulturalTreeSection(tl) {
       inspectorHtml = `
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-            <span class="pill" style="color:#34d399;border-color:#10b981">🌱 ${esc(selNode.window_status)} · ${dLbl}</span>
+            <span class="pill" style="color:#34d399;border-color:#10b981">📡 ${esc(selNode.window_status)} · ${dLbl}</span>
             <span class="pill">${esc(selNode.date)}</span>
           </div>
           <div style="font-size:14.5px;font-weight:800;color:#f8fafc;margin-bottom:4px">${esc(selNode.name)}</div>
@@ -822,7 +847,7 @@ function renderCulturalTreeSection(tl) {
           ${
             trackEdges.length
               ? `<div style="padding:6px 8px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.28);border-radius:6px;margin-bottom:8px">
-                  <div style="font-family:monospace;font-size:9.5px;color:#22d3ee;margin-bottom:3px">🎵 MATCHED CLIENT TRACK EDGES</div>
+                  <div style="font-family:monospace;font-size:9.5px;color:#22d3ee;margin-bottom:3px">🎵 MATCHED CLIENT TRACKS</div>
                   ${trackEdges.map((e) => `<div style="font-size:11px;color:#f8fafc">${esc(e.label)}</div>`).join("")}
                 </div>`
               : ""
@@ -830,11 +855,11 @@ function renderCulturalTreeSection(tl) {
           ${
             sigEdges.length
               ? `<div style="padding:6px 8px;background:rgba(15,23,42,0.8);border-left:2px solid #38bdf8;border-radius:0 6px 6px 0">
-                  <div style="font-family:monospace;font-size:9.5px;color:#38bdf8;margin-bottom:3px">↳ LIVE SIGNAL LEAVES FEEDING THIS WAVE (${sigEdges.length})</div>
+                  <div style="font-family:monospace;font-size:9.5px;color:#38bdf8;margin-bottom:3px">↳ LIVE SIGNALS FEEDING THIS WAVE (${sigEdges.length})</div>
                   ${sigEdges
                     .map((e) => {
                       const lf = nodeMap[e.source];
-                      return `<div style="font-size:11px;color:#cbd5e1">🍃 <b style="color:#38bdf8">${esc(lf ? lf.ticker : e.source)}</b> — ${esc(e.label)}</div>`;
+                      return `<div style="font-size:11px;color:#cbd5e1">⚡ <b style="color:#38bdf8">${esc(lf ? lf.ticker : e.source)}</b> — ${esc(e.label)}</div>`;
                     })
                     .join("")}
                 </div>`
@@ -848,61 +873,70 @@ function renderCulturalTreeSection(tl) {
     }
   }
 
+  const activeNowTotal = (tl.summary?.seed_now_count || 0) + (tl.summary?.peak_now_count || 0);
+
   return `
     <div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.45)">
       <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
-        <span style="color:#34d399">🌳 LIVING CULTURAL SOCIAL GRAPH TREE // ${sg.year} (${sg.stats.total_leaves} LEAVES · ${sg.stats.total_buds} BUDS · ${sg.stats.total_edges} EDGES)</span>
+        <span style="color:#34d399">🧭 360° CULTURAL YEAR RADAR // ${sg.year} (${sg.stats.total_leaves} SIGNALS · ${sg.stats.total_buds} WAVES · ${sg.stats.total_edges} GRAPH EDGES)</span>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="btn-action ${mode === "year" ? "green" : ""}" id="btn-tree-mode-year" style="padding:2px 8px;font-size:10.5px">🌳 Full Year (12 Mo)</button>
-          <button type="button" class="btn-action ${mode === "canopy" ? "cyan" : ""}" id="btn-tree-mode-canopy" style="padding:2px 8px;font-size:10.5px">🌿 Active Canopy (90d)</button>
+          <button type="button" class="btn-action ${mode === "year" ? "green" : ""}" id="btn-tree-mode-year" style="padding:2px 8px;font-size:10.5px">🧭 Full Year (360°)</button>
+          <button type="button" class="btn-action ${mode === "canopy" ? "cyan" : ""}" id="btn-tree-mode-canopy" style="padding:2px 8px;font-size:10.5px">📡 Active Sweep (90d)</button>
         </div>
       </div>
       <div class="hub-card-body">
         <div class="tree-hero-grid">
           <div class="tree-canvas-wrap">
-            <svg class="tree-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Living Cultural Timeline Social Graph Tree">
+            <svg class="tree-svg" viewBox="0 0 ${S} ${S}" role="img" aria-label="360-Degree Cultural Year Radar Social Graph">
               <defs>
-                <linearGradient id="trunkGrad" x1="0" y1="1" x2="0" y2="0">
-                  <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.7" />
-                  <stop offset="35%" stop-color="#34d399" stop-opacity="0.85" />
-                  <stop offset="65%" stop-color="#f59e0b" stop-opacity="0.85" />
-                  <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.9" />
-                </linearGradient>
+                <radialGradient id="radarSweepGrad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#10b981" stop-opacity="0.02" />
+                  <stop offset="65%" stop-color="#10b981" stop-opacity="0.16" />
+                  <stop offset="100%" stop-color="#34d399" stop-opacity="0.28" />
+                </radialGradient>
               </defs>
 
-              <!-- Roots at bottom of the Year Trunk -->
-              <path d="M ${trunkX} ${yBottom} Q ${trunkX - 45} ${yBottom + 18} ${trunkX - 95} ${yBottom + 24}" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.4" />
-              <path d="M ${trunkX} ${yBottom} Q ${trunkX + 45} ${yBottom + 18} ${trunkX + 95} ${yBottom + 24}" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.4" />
-              <path d="M ${trunkX} ${yBottom} Q ${trunkX - 18} ${yBottom + 22} ${trunkX - 38} ${yBottom + 28}" fill="none" stroke="#34d399" stroke-width="2" opacity="0.35" />
+              <!-- Concentric Radar Orbit Rings -->
+              <circle cx="${cx}" cy="${cy}" r="${rOuterRim}" fill="none" stroke="rgba(148,163,184,0.16)" stroke-width="1" />
+              <circle cx="${cx}" cy="${cy}" r="${rBudBase}" fill="none" stroke="rgba(148,163,184,0.14)" stroke-width="1" stroke-dasharray="3 5" />
+              <circle cx="${cx}" cy="${cy}" r="${rLeafBase}" fill="none" stroke="rgba(56,189,248,0.16)" stroke-width="1" stroke-dasharray="2 4" />
+              <circle cx="${cx}" cy="${cy}" r="${rCore + 36}" fill="none" stroke="rgba(148,163,184,0.08)" stroke-width="1" />
 
-              <!-- Main Organic Year Trunk -->
-              <path d="M ${trunkX} ${yBottom + 6} C ${trunkX - 10} ${(yBottom + yTop) * 0.65}, ${trunkX + 10} ${(yBottom + yTop) * 0.35}, ${trunkX} ${yTop - 10}" fill="none" stroke="url(#trunkGrad)" stroke-width="9" stroke-linecap="round" opacity="0.88" />
-              <path d="M ${trunkX} ${yBottom + 6} C ${trunkX - 10} ${(yBottom + yTop) * 0.65}, ${trunkX + 10} ${(yBottom + yTop) * 0.35}, ${trunkX} ${todayTrunkY}" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" opacity="0.95" />
+              <!-- 12 Month Spokes & Labels -->
+              ${monthSpokes.join("")}
 
-              <!-- Glowing TODAY Growth Ring on Trunk -->
-              <circle cx="${trunkX}" cy="${todayTrunkY.toFixed(1)}" r="9" fill="#070b12" stroke="#34d399" stroke-width="2.5" />
-              <circle class="tree-pulse-ring" cx="${trunkX}" cy="${todayTrunkY.toFixed(1)}" r="12" fill="none" stroke="#34d399" stroke-width="1.5" />
-              <rect x="${trunkX - 46}" y="${(todayTrunkY - 27).toFixed(1)}" width="92" height="16" rx="4" fill="#064e3b" stroke="#34d399" stroke-width="1" />
-              <text x="${trunkX}" y="${(todayTrunkY - 16).toFixed(1)}" text-anchor="middle" fill="#ecfdf5" font-family="monospace" font-size="9" font-weight="800">TODAY · ${esc(sg.today.slice(5))}</text>
+              <!-- Seasonal Outer Rim Arcs -->
+              ${rimArcs.join("")}
 
-              <!-- 12 Month Branches -->
-              ${branchSvgs.join("")}
+              <!-- Active 35-Day Pre-Wave Seeding Radar Sweep Beam -->
+              <path d="${sweepWedgePath}" fill="url(#radarSweepGrad)" />
+              <line x1="${cx}" y1="${cy}" x2="${pNeedleTip.x.toFixed(1)}" y2="${pNeedleTip.y.toFixed(1)}" stroke="#34d399" stroke-width="2" stroke-linecap="round" />
+              <circle cx="${pNeedleTip.x.toFixed(1)}" cy="${pNeedleTip.y.toFixed(1)}" r="4.5" fill="#34d399" />
 
-              <!-- Social Graph Cross-Branch Vines (Edges) -->
-              ${edgeSvgs.join("")}
+              <!-- Glowing Social Graph Chords -->
+              ${chordSvgs.join("")}
 
-              <!-- Day Leaves (Live Signals) -->
+              <!-- Inner Orbit: Live Signals -->
               ${leafSvgs.join("")}
 
-              <!-- Future Buds (Holidays, Sports, Catalysts) -->
+              <!-- Outer Orbit: Cultural & Sports Waves -->
               ${budSvgs.join("")}
+
+              <!-- Center Compass Core -->
+              <circle cx="${cx}" cy="${cy}" r="${rCore}" fill="#070b12" stroke="rgba(16,185,129,0.55)" stroke-width="1.8" />
+              <text x="${cx}" y="${cy - 12}" text-anchor="middle" fill="#34d399" font-family="monospace" font-size="10" font-weight="800">TODAY ${esc(sg.today.slice(5))}</text>
+              <text x="${cx}" y="${cy + 7}" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="18" font-weight="900">${sg.year}</text>
+              <text x="${cx}" y="${cy + 23}" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="9.5" font-weight="700">${activeNowTotal} ACTIVE WAVES</text>
+
+              <!-- Selected Node Floating Label (Zero Overlap) -->
+              ${selCalloutSvg}
             </svg>
             <div class="tree-legend">
-              <span><span class="tree-legend-dot" style="background:#34d399"></span>Seed Now Bud</span>
-              <span><span class="tree-legend-dot" style="background:#f59e0b"></span>Peak Now Bud</span>
-              <span><span class="tree-legend-dot" style="background:#38bdf8"></span>Sports / City Bud</span>
-              <span><span class="tree-legend-dot" style="background:#22d3ee"></span>Day Leaf (Live t₀ Signal)</span>
-              <span>--- Social Graph Edge</span>
+              <span><span class="tree-legend-dot" style="background:#10b981"></span>Outer Ring: Seed Now</span>
+              <span><span class="tree-legend-dot" style="background:#f59e0b"></span>Peak Now</span>
+              <span><span class="tree-legend-dot" style="background:#38bdf8"></span>Sports / City</span>
+              <span><span class="tree-legend-dot" style="background:#22d3ee"></span>Inner Ring: Live t₀ Signal</span>
+              <span>--- Social Graph Chord</span>
             </div>
           </div>
 

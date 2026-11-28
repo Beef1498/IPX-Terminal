@@ -1020,7 +1020,9 @@ body {
   width: 100%;
   height: auto;
   display: block;
-  max-height: 540px;
+  max-height: 520px;
+  max-width: 520px;
+  margin: 0 auto;
 }
 .tree-node-hit {
   cursor: pointer;
