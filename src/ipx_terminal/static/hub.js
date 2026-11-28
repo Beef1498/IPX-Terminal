@@ -1665,6 +1665,9 @@ document.querySelectorAll(".hub-tab").forEach((btn) => {
   btn.addEventListener("click", () => switchHubView(btn.dataset.view, true));
 });
 document.getElementById("btn-auth-lock")?.addEventListener("click", () => openUnlockModal());
+document.getElementById("btn-open-brief-ab")?.addEventListener("click", () => {
+  if (typeof openBriefAbSwipeModal === "function") openBriefAbSwipeModal();
+});
 
 window.addEventListener("hashchange", () => {
   const h = window.location.hash.replace("#", "").toLowerCase();
