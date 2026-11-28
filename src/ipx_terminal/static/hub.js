@@ -18,6 +18,8 @@ const hubState = {
   timelineScopeFilter: "ALL",
   timelineWindowFilter: "ALL",
   timelineCityFilter: "ALL",
+  timelineTreeMode: "year", // "year" | "canopy"
+  selectedTreeNodeId: null,
   orchestration: null,
   selectedHardwareId: null,
   updates: null,
@@ -613,6 +615,306 @@ async function loadTimeline() {
   }
 }
 
+function renderCulturalTreeSection(tl) {
+  const sg = tl.social_graph;
+  if (!sg || !(sg.branches || []).length) return "";
+
+  const mode = hubState.timelineTreeMode || "year";
+  const todayM = Number(sg.today_month || 1);
+  const allBranches = sg.branches || [];
+  let visibleBranches = allBranches;
+  if (mode === "canopy") {
+    const prevM = todayM === 1 ? 12 : todayM - 1;
+    const nextM = todayM === 12 ? 1 : todayM + 1;
+    const order = [prevM, todayM, nextM];
+    visibleBranches = order.map((m) => allBranches.find((b) => b.month === m)).filter(Boolean);
+  }
+
+  const W = 820;
+  const H = mode === "canopy" ? 440 : 560;
+  const trunkX = W / 2;
+  const yBottom = H - 36;
+  const yTop = 44;
+  const count = Math.max(1, visibleBranches.length);
+  const stepY = count > 1 ? (yBottom - yTop) / (count - 1) : 0;
+
+  // Map every node to SVG coordinates for interactive clicks & glowing social-graph edges
+  const nodeMap = {};
+  const nodeCoords = {};
+  const branchSvgs = [];
+  const leafSvgs = [];
+  const budSvgs = [];
+
+  let todayTrunkY = yBottom - ((todayM - 1) / 11) * (yBottom - yTop);
+
+  visibleBranches.forEach((br, idx) => {
+    const y = count > 1 ? yBottom - idx * stepY : (yBottom + yTop) / 2;
+    if (br.month === todayM) todayTrunkY = y;
+    const dir = idx % 2 === 0 ? -1 : 1; // alternate left/right off trunk
+    const limbLen = mode === "canopy" ? 290 : 250;
+    const endX = trunkX + dir * limbLen;
+    const endY = y - (mode === "canopy" ? 30 : 20);
+    const ctrlX = trunkX + dir * (limbLen * 0.48);
+    const ctrlY = y + 8;
+
+    const strokeW = br.is_current_month ? 4.2 : 2.6;
+    const op = br.is_current_month ? 0.95 : 0.65;
+    branchSvgs.push(
+      `<path d="M ${trunkX} ${y} Q ${ctrlX} ${ctrlY} ${endX} ${endY}" fill="none" stroke="${br.color}" stroke-width="${strokeW}" stroke-linecap="round" opacity="${op}" />`
+    );
+    // Month label at branch tip
+    const lblX = endX + dir * 10;
+    const anchor = dir < 0 ? "end" : "start";
+    branchSvgs.push(
+      `<text x="${lblX}" y="${endY + 4}" text-anchor="${anchor}" fill="${br.is_current_month ? "#f8fafc" : br.color}" font-family="monospace" font-size="${br.is_current_month ? "13" : "11"}" font-weight="800">${esc(br.name.toUpperCase())}${br.is_current_month ? " ●" : ""}</text>`
+    );
+
+    // Helper: point along quadratic Bezier at t in [0,1]
+    const ptOnBranch = (t) => {
+      const omt = 1 - t;
+      return {
+        x: omt * omt * trunkX + 2 * omt * t * ctrlX + t * t * endX,
+        y: omt * omt * y + 2 * omt * t * ctrlY + t * t * endY,
+      };
+    };
+
+    // Render Day-Leaves (captured live signals) along the upper side of the branch
+    const leaves = (br.leaves || []).slice(0, mode === "canopy" ? 16 : 9);
+    leaves.forEach((lf, li) => {
+      const t = Math.max(0.16, Math.min(0.92, 0.18 + (li / Math.max(1, leaves.length)) * 0.72));
+      const p = ptOnBranch(t);
+      const offsetY = (li % 2 === 0 ? -1 : 1) * (12 + (li % 3) * 5);
+      const lx = p.x;
+      const ly = p.y + offsetY;
+      nodeCoords[lf.id] = { x: lx, y: ly };
+      nodeMap[lf.id] = lf;
+      const isSel = hubState.selectedTreeNodeId === lf.id;
+      const sz = lf.size || 7;
+      const angle = dir < 0 ? -35 + (li % 3) * 18 : 35 - (li % 3) * 18;
+      // Botanical teardrop leaf path
+      leafSvgs.push(
+        `<g class="tree-node-hit" data-tree-node="${esc(lf.id)}" transform="translate(${lx.toFixed(1)},${ly.toFixed(1)}) rotate(${angle})">
+          ${lf.is_today || isSel ? `<circle cx="0" cy="0" r="${sz + 5}" fill="${lf.color}" opacity="0.22" />` : ""}
+          <path d="M 0 ${-sz} C ${sz * 0.85} ${-sz * 0.35}, ${sz * 0.85} ${sz * 0.55}, 0 ${sz} C ${-sz * 0.85} ${sz * 0.55}, ${-sz * 0.85} ${-sz * 0.35}, 0 ${-sz} Z" fill="${lf.color}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "1.8" : "0.9"}" opacity="0.92" />
+          <title>${esc(lf.ticker)} (${esc(lf.date)}) · CVS ${lf.cvs_score} — ${esc(lf.title || "")}</title>
+        </g>`
+      );
+    });
+
+    // Render Future Buds / Blossoms (cultural anchors, sports, custom catalysts) along the branch
+    const buds = (br.buds || []).slice(0, mode === "canopy" ? 10 : 5);
+    buds.forEach((bd, bi) => {
+      const t = Math.max(0.22, Math.min(0.94, 0.24 + (bi / Math.max(1, buds.length)) * 0.68));
+      const p = ptOnBranch(t);
+      const offsetY = (bi % 2 === 0 ? -1 : 1) * (mode === "canopy" ? 26 : 18);
+      const bx = p.x;
+      const by = p.y + offsetY;
+      nodeCoords[bd.id] = { x: bx, y: by };
+      nodeMap[bd.id] = bd;
+      const isSel = hubState.selectedTreeNodeId === bd.id;
+      const isActive = bd.window_status === "PEAK_NOW" || bd.window_status === "SEED_NOW";
+      const fill =
+        bd.window_status === "PEAK_NOW"
+          ? "#f59e0b"
+          : bd.window_status === "SEED_NOW"
+          ? "#10b981"
+          : bd.scope === "sports"
+          ? "#38bdf8"
+          : bd.scope === "regional"
+          ? "#a78bfa"
+          : "#64748b";
+      const r = isActive ? 7.5 : 5.5;
+      const shortName = String(bd.name || "").replace(/^\[[A-Z]+\]\s*/, "").slice(0, mode === "canopy" ? 22 : 16);
+      budSvgs.push(
+        `<g class="tree-node-hit" data-tree-node="${esc(bd.id)}">
+          ${isActive ? `<circle class="tree-pulse-ring" cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="11" fill="none" stroke="${fill}" stroke-width="1.4" />` : ""}
+          <circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${r}" fill="${fill}" stroke="${isSel ? "#ffffff" : "#070b12"}" stroke-width="${isSel ? "2.2" : "1.2"}" />
+          ${
+            isActive || mode === "canopy" || isSel
+              ? `<text x="${(bx + dir * 10).toFixed(1)}" y="${(by + 3).toFixed(1)}" text-anchor="${dir < 0 ? "end" : "start"}" fill="${isActive || isSel ? "#f8fafc" : "#94a3b8"}" font-family="monospace" font-size="9.5" font-weight="${isActive ? "700" : "500"}">${esc(shortName)}</text>`
+              : ""
+          }
+          <title>${esc(bd.name)} (${esc(bd.date)} · ${bd.days_until <= 0 ? "ACTIVE" : `T-${bd.days_until}d`})</title>
+        </g>`
+      );
+    });
+  });
+
+  // Default selected node: first active SEED_NOW/PEAK_NOW bud or first leaf
+  if (!hubState.selectedTreeNodeId || !nodeMap[hubState.selectedTreeNodeId]) {
+    const firstActive = Object.values(nodeMap).find(
+      (n) => n.node_type === "bud" && (n.window_status === "PEAK_NOW" || n.window_status === "SEED_NOW")
+    );
+    const firstAny = firstActive || Object.values(nodeMap)[0] || null;
+    hubState.selectedTreeNodeId = firstAny ? firstAny.id : null;
+  }
+  const selNode = hubState.selectedTreeNodeId ? nodeMap[hubState.selectedTreeNodeId] : null;
+
+  // Render Glowing Social Graph Edges (signal_to_anchor arcs)
+  const edgeSvgs = [];
+  (sg.edges || []).forEach((ed) => {
+    if (ed.relation !== "signal_to_anchor") return;
+    const a = nodeCoords[ed.source];
+    const b = nodeCoords[ed.target];
+    if (!a || !b) return;
+    const isHit = selNode && (ed.source === selNode.id || ed.target === selNode.id);
+    const midX = (a.x + b.x) / 2;
+    const midY = Math.min(a.y, b.y) - 28;
+    edgeSvgs.push(
+      `<path class="tree-edge ${isHit ? "active" : ""}" d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${midX.toFixed(1)} ${midY.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" />`
+    );
+  });
+
+  // Build Inspector Card HTML for the selected leaf or bud
+  let inspectorHtml = `<div style="color:#94a3b8;font-size:12px">Tap any glowing leaf (captured signal) or bud (upcoming holiday / sports wave) on the tree to inspect its social graph connections.</div>`;
+  if (selNode) {
+    const relatedEdges = (sg.edges || []).filter((e) => e.source === selNode.id || e.target === selNode.id);
+    const cityEdges = relatedEdges.filter((e) => e.relation === "anchor_to_city");
+    const trackEdges = relatedEdges.filter((e) => e.relation === "anchor_to_track");
+    const sigEdges = relatedEdges.filter((e) => e.relation === "signal_to_anchor");
+
+    if (selNode.node_type === "leaf") {
+      inspectorHtml = `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+            <span class="pill green">🍃 DAY LEAF · ${esc(selNode.date)}</span>
+            <span class="pill" style="color:${selNode.color};border-color:${selNode.color}">${esc(selNode.sector)} · CVS ${selNode.cvs_score}</span>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:#f8fafc;font-family:monospace;margin-bottom:4px">${esc(selNode.ticker)}</div>
+          <div style="font-size:12px;color:#cbd5e1;line-height:1.4;margin-bottom:8px">${esc(selNode.title || "")}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:8px">Platforms: <b style="color:#e2e8f0">${esc((selNode.platforms || []).join(", ") || selNode.source_type || "live")}</b></div>
+          ${
+            sigEdges.length
+              ? `<div style="padding:7px 9px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:7px;margin-bottom:8px">
+                  <div style="font-family:monospace;font-size:9.5px;color:#34d399;margin-bottom:4px">↳ GROWING TOWARD UPCOMING WAVES (${sigEdges.length})</div>
+                  ${sigEdges
+                    .map((e) => {
+                      const targetBud = nodeMap[e.target];
+                      return `<div style="font-size:11px;color:#f8fafc;margin-bottom:2px">→ <b>${esc(targetBud ? targetBud.name : e.target)}</b> <span style="color:#94a3b8">(${esc(e.label)})</span></div>`;
+                    })
+                    .join("")}
+                </div>`
+              : `<div style="font-size:11px;color:#64748b">No direct holiday/sports edge linked yet — organic standalone signal leaf.</div>`
+          }
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn-action cyan" data-tl-jump="${esc(selNode.ticker)}">Open ${esc(selNode.ticker)} in Terminal →</button>
+        </div>
+      `;
+    } else {
+      const dLbl = selNode.days_until <= 0 ? "ACTIVE NOW" : `T-${selNode.days_until}d`;
+      inspectorHtml = `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <span class="pill" style="color:#34d399;border-color:#10b981">🌱 ${esc(selNode.window_status)} · ${dLbl}</span>
+            <span class="pill">${esc(selNode.date)}</span>
+          </div>
+          <div style="font-size:14.5px;font-weight:800;color:#f8fafc;margin-bottom:4px">${esc(selNode.name)}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">🎯 First Movers: <b style="color:#e2e8f0">${esc(selNode.first_mover_cohort || "--")}</b></div>
+          ${selNode.spotify_billboard_angle ? `<div style="font-size:11.5px;color:#cbd5e1;line-height:1.4;margin-bottom:8px"><b style="color:#34d399">Spotify / Billboard:</b> ${esc(selNode.spotify_billboard_angle)}</div>` : ""}
+          ${
+            cityEdges.length
+              ? `<div style="margin-bottom:8px"><div style="font-family:monospace;font-size:9.5px;color:#94a3b8;margin-bottom:4px">CONNECTED SPOTIFY CITIES</div><div style="display:flex;gap:4px;flex-wrap:wrap">${cityEdges
+                  .map((e) => `<button type="button" class="btn-action" data-tl-city="${esc(e.label)}" style="padding:2px 7px;font-size:10px;color:#34d399">📍 ${esc(e.label)}</button>`)
+                  .join("")}</div></div>`
+              : ""
+          }
+          ${
+            trackEdges.length
+              ? `<div style="padding:6px 8px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.28);border-radius:6px;margin-bottom:8px">
+                  <div style="font-family:monospace;font-size:9.5px;color:#22d3ee;margin-bottom:3px">🎵 MATCHED CLIENT TRACK EDGES</div>
+                  ${trackEdges.map((e) => `<div style="font-size:11px;color:#f8fafc">${esc(e.label)}</div>`).join("")}
+                </div>`
+              : ""
+          }
+          ${
+            sigEdges.length
+              ? `<div style="padding:6px 8px;background:rgba(15,23,42,0.8);border-left:2px solid #38bdf8;border-radius:0 6px 6px 0">
+                  <div style="font-family:monospace;font-size:9.5px;color:#38bdf8;margin-bottom:3px">↳ LIVE SIGNAL LEAVES FEEDING THIS WAVE (${sigEdges.length})</div>
+                  ${sigEdges
+                    .map((e) => {
+                      const lf = nodeMap[e.source];
+                      return `<div style="font-size:11px;color:#cbd5e1">🍃 <b style="color:#38bdf8">${esc(lf ? lf.ticker : e.source)}</b> — ${esc(e.label)}</div>`;
+                    })
+                    .join("")}
+                </div>`
+              : ""
+          }
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn-action green" id="btn-tree-branch-here" data-parent-anchor="${esc(selNode.anchor_id || "")}">+ Branch Catalyst Here</button>
+        </div>
+      `;
+    }
+  }
+
+  return `
+    <div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.45)">
+      <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
+        <span style="color:#34d399">🌳 LIVING CULTURAL SOCIAL GRAPH TREE // ${sg.year} (${sg.stats.total_leaves} LEAVES · ${sg.stats.total_buds} BUDS · ${sg.stats.total_edges} EDGES)</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn-action ${mode === "year" ? "green" : ""}" id="btn-tree-mode-year" style="padding:2px 8px;font-size:10.5px">🌳 Full Year (12 Mo)</button>
+          <button type="button" class="btn-action ${mode === "canopy" ? "cyan" : ""}" id="btn-tree-mode-canopy" style="padding:2px 8px;font-size:10.5px">🌿 Active Canopy (90d)</button>
+        </div>
+      </div>
+      <div class="hub-card-body">
+        <div class="tree-hero-grid">
+          <div class="tree-canvas-wrap">
+            <svg class="tree-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Living Cultural Timeline Social Graph Tree">
+              <defs>
+                <linearGradient id="trunkGrad" x1="0" y1="1" x2="0" y2="0">
+                  <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.7" />
+                  <stop offset="35%" stop-color="#34d399" stop-opacity="0.85" />
+                  <stop offset="65%" stop-color="#f59e0b" stop-opacity="0.85" />
+                  <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.9" />
+                </linearGradient>
+              </defs>
+
+              <!-- Roots at bottom of the Year Trunk -->
+              <path d="M ${trunkX} ${yBottom} Q ${trunkX - 45} ${yBottom + 18} ${trunkX - 95} ${yBottom + 24}" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.4" />
+              <path d="M ${trunkX} ${yBottom} Q ${trunkX + 45} ${yBottom + 18} ${trunkX + 95} ${yBottom + 24}" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.4" />
+              <path d="M ${trunkX} ${yBottom} Q ${trunkX - 18} ${yBottom + 22} ${trunkX - 38} ${yBottom + 28}" fill="none" stroke="#34d399" stroke-width="2" opacity="0.35" />
+
+              <!-- Main Organic Year Trunk -->
+              <path d="M ${trunkX} ${yBottom + 6} C ${trunkX - 10} ${(yBottom + yTop) * 0.65}, ${trunkX + 10} ${(yBottom + yTop) * 0.35}, ${trunkX} ${yTop - 10}" fill="none" stroke="url(#trunkGrad)" stroke-width="9" stroke-linecap="round" opacity="0.88" />
+              <path d="M ${trunkX} ${yBottom + 6} C ${trunkX - 10} ${(yBottom + yTop) * 0.65}, ${trunkX + 10} ${(yBottom + yTop) * 0.35}, ${trunkX} ${todayTrunkY}" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" opacity="0.95" />
+
+              <!-- Glowing TODAY Growth Ring on Trunk -->
+              <circle cx="${trunkX}" cy="${todayTrunkY.toFixed(1)}" r="9" fill="#070b12" stroke="#34d399" stroke-width="2.5" />
+              <circle class="tree-pulse-ring" cx="${trunkX}" cy="${todayTrunkY.toFixed(1)}" r="12" fill="none" stroke="#34d399" stroke-width="1.5" />
+              <rect x="${trunkX - 46}" y="${(todayTrunkY - 27).toFixed(1)}" width="92" height="16" rx="4" fill="#064e3b" stroke="#34d399" stroke-width="1" />
+              <text x="${trunkX}" y="${(todayTrunkY - 16).toFixed(1)}" text-anchor="middle" fill="#ecfdf5" font-family="monospace" font-size="9" font-weight="800">TODAY · ${esc(sg.today.slice(5))}</text>
+
+              <!-- 12 Month Branches -->
+              ${branchSvgs.join("")}
+
+              <!-- Social Graph Cross-Branch Vines (Edges) -->
+              ${edgeSvgs.join("")}
+
+              <!-- Day Leaves (Live Signals) -->
+              ${leafSvgs.join("")}
+
+              <!-- Future Buds (Holidays, Sports, Catalysts) -->
+              ${budSvgs.join("")}
+            </svg>
+            <div class="tree-legend">
+              <span><span class="tree-legend-dot" style="background:#34d399"></span>Seed Now Bud</span>
+              <span><span class="tree-legend-dot" style="background:#f59e0b"></span>Peak Now Bud</span>
+              <span><span class="tree-legend-dot" style="background:#38bdf8"></span>Sports / City Bud</span>
+              <span><span class="tree-legend-dot" style="background:#22d3ee"></span>Day Leaf (Live t₀ Signal)</span>
+              <span>--- Social Graph Edge</span>
+            </div>
+          </div>
+
+          <div class="tree-inspector">
+            ${inspectorHtml}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderTimelineView() {
   const el = document.getElementById("view-timeline");
   const tl = hubState.timeline;
@@ -767,6 +1069,8 @@ function renderTimelineView() {
         <div class="hub-card" style="padding:10px 12px"><div style="font-family:monospace;font-size:10px;color:#94a3b8">LIVE SIGNAL BRANCHES</div><div style="font-size:20px;font-weight:800;color:#a78bfa">${s.linked_signal_branches ?? 0}</div><div style="font-size:10.5px;color:#64748b">Auto-linked from Terminal t₀</div></div>
       </div>
 
+      ${renderCulturalTreeSection(tl)}
+
       <div class="hub-card" style="margin-bottom:14px;border-color:rgba(16,185,129,0.4)">
         <div class="hub-card-header" style="flex-wrap:wrap;gap:8px">
           <span>🌤 CURRENT SEASONAL MOOD // ${esc((season.label || "").toUpperCase())} (${esc(tl.reference_date || "")})</span>
@@ -817,7 +1121,24 @@ function renderTimelineView() {
   `;
 
   document.getElementById("btn-tl-refresh").addEventListener("click", loadTimeline);
-  document.getElementById("btn-tl-add-catalyst").addEventListener("click", openAddCatalystModal);
+  document.getElementById("btn-tl-add-catalyst").addEventListener("click", () => openAddCatalystModal(""));
+  document.getElementById("btn-tree-mode-year")?.addEventListener("click", () => {
+    hubState.timelineTreeMode = "year";
+    renderTimelineView();
+  });
+  document.getElementById("btn-tree-mode-canopy")?.addEventListener("click", () => {
+    hubState.timelineTreeMode = "canopy";
+    renderTimelineView();
+  });
+  document.getElementById("btn-tree-branch-here")?.addEventListener("click", (e) => {
+    openAddCatalystModal(e.currentTarget.dataset.parentAnchor || "");
+  });
+  el.querySelectorAll("[data-tree-node]").forEach((nodeEl) => {
+    nodeEl.addEventListener("click", () => {
+      hubState.selectedTreeNodeId = nodeEl.dataset.treeNode;
+      renderTimelineView();
+    });
+  });
   document.getElementById("btn-tl-sync-sports").addEventListener("click", async () => {
     const btn = document.getElementById("btn-tl-sync-sports");
     btn.disabled = true;
@@ -866,10 +1187,12 @@ function renderTimelineView() {
   });
 }
 
-function openAddCatalystModal() {
+function openAddCatalystModal(preselectParentId = "") {
   const tl = hubState.timeline || {};
   const anchors = (tl.timeline_nodes || []).filter((n) => !n.is_custom);
-  const anchorOpts = anchors.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.next_date)})</option>`).join("");
+  const anchorOpts = anchors
+    .map((a) => `<option value="${esc(a.id)}" ${preselectParentId && preselectParentId === a.id ? "selected" : ""}>${esc(a.name)} (${esc(a.next_date)})</option>`)
+    .join("");
   const activeProj = typeof getActiveProject === "function" ? getActiveProject() : null;
 
   openModal(

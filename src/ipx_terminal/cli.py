@@ -465,7 +465,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             }
             headers = {"Content-Type": "application/json"}
             if token:
-                headers["X-IPX-Write-Token"] = token
+                headers["X-IPX-Token"] = token
             req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode("utf-8"),

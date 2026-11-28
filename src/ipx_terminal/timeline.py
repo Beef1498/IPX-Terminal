@@ -307,6 +307,14 @@ def build_timeline_workspace(
         for city, cnt in sorted(city_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
     ]
 
+    social_graph = _build_social_graph_tree(
+        today=today,
+        seasons=seasons,
+        nodes=nodes,
+        recent_signals=recent_signals,
+        project=project,
+    )
+
     return {
         "reference_date": today.isoformat(),
         "current_season": current_season,
@@ -325,6 +333,176 @@ def build_timeline_workspace(
         "spotify_billboard_cities": cities_registry,
         "seasonal_moods": seasons,
         "custom_catalysts": custom_catalysts,
+        "social_graph": social_graph,
+    }
+
+
+MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+SEASON_COLORS = {
+    "winter_reset": "#38bdf8",
+    "spring_reawakening": "#34d399",
+    "peak_summer": "#f59e0b",
+    "fall_ber_months": "#fb923c",
+    "holiday_peak": "#a78bfa",
+}
+SECTOR_LEAF_COLORS = {
+    "MUSIC": "#22d3ee",
+    "POP": "#a78bfa",
+    "SPORTS": "#38bdf8",
+    "CREATORS": "#34d399",
+    "FILM_TV": "#f59e0b",
+    "GAMING": "#fb7185",
+    "DEALS": "#94a3b8",
+}
+
+
+def _build_social_graph_tree(
+    today: date,
+    seasons: List[Dict[str, Any]],
+    nodes: List[Dict[str, Any]],
+    recent_signals: List[Dict[str, Any]],
+    project: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the structured Living Cultural Tree & Social Graph (Trunk=Year, Branches=Months, Leaves=Days/Signals, Buds=Future Waves)."""
+    month_to_season: Dict[int, Dict[str, Any]] = {}
+    for s in seasons:
+        for m in s.get("months") or []:
+            month_to_season[int(m)] = s
+
+    branches: Dict[int, Dict[str, Any]] = {}
+    for m in range(1, 13):
+        s_info = month_to_season.get(m, {})
+        sid = str(s_info.get("id") or "winter_reset")
+        branches[m] = {
+            "month": m,
+            "name": MONTH_NAMES[m],
+            "season_id": sid,
+            "season_label": s_info.get("label", ""),
+            "color": SEASON_COLORS.get(sid, "#34d399"),
+            "is_current_month": m == today.month,
+            "leaves": [],
+            "buds": [],
+        }
+
+    edges: List[Dict[str, Any]] = []
+    leaf_ids: set[str] = set()
+
+    # 1. Populate Day-Leaves from real captured t_0 signals
+    for sig in recent_signals[:60]:
+        cap = str(sig.get("captured_at") or "")
+        try:
+            dt = date.fromisoformat(cap[:10])
+        except ValueError:
+            dt = today
+        leaf_id = f"leaf-{sig.get('id')}"
+        leaf_ids.add(leaf_id)
+        cvs = float(sig.get("cvs_score") or 0.0)
+        sec = str(sig.get("sector") or "POP").upper()
+        leaf_obj = {
+            "id": leaf_id,
+            "node_type": "leaf",
+            "signal_id": sig.get("id"),
+            "ticker": sig.get("ticker"),
+            "title": sig.get("title"),
+            "sector": sec,
+            "month": dt.month,
+            "day": dt.day,
+            "date": dt.isoformat(),
+            "cvs_score": round(cvs, 1),
+            "source_type": sig.get("source_type"),
+            "platforms": sig.get("platforms") or [],
+            "color": SECTOR_LEAF_COLORS.get(sec, "#34d399"),
+            "size": round(max(5.5, min(13.0, 5.5 + (cvs / 100.0) * 7.5)), 1),
+            "is_today": dt == today,
+        }
+        branches[dt.month]["leaves"].append(leaf_obj)
+
+    # 2. Populate Future Buds / Blossoms from recurring anchors + custom/sports catalysts + Graph Edges
+    bud_count = 0
+    for n in nodes:
+        m = int(n.get("month") or 1)
+        d = int(n.get("day") or 1)
+        bud_id = f"bud-{n['id']}"
+        bud_count += 1
+        bud_obj = {
+            "id": bud_id,
+            "anchor_id": n["id"],
+            "node_type": "bud",
+            "name": n["name"],
+            "scope": n.get("scope", "national"),
+            "month": m,
+            "day": d,
+            "date": n.get("next_date", ""),
+            "days_until": n.get("days_until", 0),
+            "window_status": n.get("window_status", "UPCOMING"),
+            "target_cities": n.get("target_cities") or [],
+            "vibe_tags": n.get("vibe_tags") or [],
+            "first_mover_cohort": n.get("first_mover_cohort", ""),
+            "spotify_billboard_angle": n.get("spotify_billboard_angle", ""),
+            "matched_tracks": n.get("matched_tracks") or [],
+            "child_count": len(n.get("child_catalysts") or []),
+            "is_custom": bool(n.get("is_custom")),
+        }
+        branches[m]["buds"].append(bud_obj)
+
+        # Social Graph Edge: live signal leaf -> upcoming cultural/sports bud
+        for lsig in n.get("linked_signals") or []:
+            src_id = f"leaf-{lsig.get('signal_id')}"
+            if src_id in leaf_ids:
+                edges.append(
+                    {
+                        "source": src_id,
+                        "target": bud_id,
+                        "relation": "signal_to_anchor",
+                        "label": ", ".join(lsig.get("matched_terms") or []) or "trend match",
+                    }
+                )
+
+        # Social Graph Edge: cultural/sports bud -> client catalog track
+        for tr in n.get("matched_tracks") or []:
+            edges.append(
+                {
+                    "source": bud_id,
+                    "target": f"track-{tr.get('title')}",
+                    "relation": "anchor_to_track",
+                    "label": f"{tr.get('artist')} — {tr.get('title')}",
+                }
+            )
+
+        # Social Graph Edge: cultural/sports bud -> Spotify/Billboard priority cities
+        for city in (n.get("target_cities") or [])[:4]:
+            edges.append(
+                {
+                    "source": bud_id,
+                    "target": f"city-{city}",
+                    "relation": "anchor_to_city",
+                    "label": city,
+                }
+            )
+
+    # Sort leaves/buds within each month by day
+    for m in range(1, 13):
+        branches[m]["leaves"].sort(key=lambda x: (x["day"], -x["cvs_score"]))
+        branches[m]["buds"].sort(key=lambda x: (x["day"], x["name"]))
+
+    day_of_year = today.timetuple().tm_yday
+    year_progress_pct = round((day_of_year / 365.0) * 100.0, 1)
+
+    return {
+        "year": today.year,
+        "today": today.isoformat(),
+        "today_month": today.month,
+        "today_day": today.day,
+        "year_progress_pct": year_progress_pct,
+        "project_name": project.get("name") if project else None,
+        "branches": [branches[m] for m in range(1, 13)],
+        "edges": edges,
+        "stats": {
+            "total_leaves": len(leaf_ids),
+            "total_buds": bud_count,
+            "total_edges": len(edges),
+            "signal_to_anchor_edges": sum(1 for e in edges if e["relation"] == "signal_to_anchor"),
+        },
     }
 
 

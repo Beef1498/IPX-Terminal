@@ -814,6 +814,14 @@ class TestIPXTerminal(unittest.TestCase):
         self.assertTrue(compact["seed_now_waves"])
         self.assertTrue(compact["priority_spotify_cities_now"])
 
+        # Living Cultural Social Graph Tree structure (12 month branches + leaves + buds + edges)
+        sg = ws["social_graph"]
+        self.assertEqual(len(sg["branches"]), 12)
+        self.assertGreaterEqual(sg["stats"]["total_leaves"], 1)
+        self.assertGreaterEqual(sg["stats"]["total_buds"], 25)
+        self.assertGreaterEqual(sg["stats"]["signal_to_anchor_edges"], 1)
+        self.assertGreaterEqual(sg["stats"]["total_edges"], 20)
+
         # Delete custom catalysts cleanly
         self.assertTrue(self.db.delete_timeline_catalyst(child["id"]))
         self.assertTrue(self.db.delete_timeline_catalyst(standalone["id"]))
