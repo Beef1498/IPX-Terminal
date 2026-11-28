@@ -368,7 +368,13 @@ def ingest_daily_niche_creators(
         sec_prio = 0 if sec in ("POP", "MUSIC") else 1
         return (ts, plat_prio, sec_prio)
 
-    ranked = sorted(enumerate(entries), key=_sort_key)
+    # Filter out dry business/DEALS feeds from daily social-trend rotation (social & subculture first!)
+    social_entries = [
+        (idx, e)
+        for idx, e in enumerate(entries)
+        if str(e.get("sector") or "POP").upper() != "DEALS"
+    ]
+    ranked = sorted(social_entries if social_entries else list(enumerate(entries)), key=_sort_key)
     selected: List[tuple] = []
     chosen_idxs = set()
     seen_sectors = set()
@@ -635,7 +641,8 @@ def run_gemini_quant(
     map_clusters: List[Dict[str, Any]] = []
     if fetch_live:
         try:
-            mkts = fetch_prediction_markets(source="all", ip_only=True, live_odds_only=True, limit=12)
+            mkts = fetch_prediction_markets(source="all", ip_only=True, live_odds_only=True, limit=18)
+            _dry_biz_terms = ("earnings", "merger", "acquisition", "ipo", "sec ", "antitrust", "fed ", "interest rate", "gdp", "stock price", "market cap")
             markets_data = [
                 {
                     "id": m.get("id"),
@@ -646,8 +653,10 @@ def run_gemini_quant(
                     "volume_24h": m.get("volume_24h"),
                     "url": m.get("url"),
                 }
-                for m in (mkts.get("markets") or [])[:10]
-            ]
+                for m in (mkts.get("markets") or [])
+                if str(m.get("sector") or "").upper() != "DEALS"
+                and not any(bt in str(m.get("title") or "").lower() for bt in _dry_biz_terms)
+            ][:10]
         except Exception:
             markets_data = []
         try:
@@ -725,18 +734,26 @@ def run_gemini_quant(
         )
 
     system_prompt = (
-        "You are the Lead Quantitative Analyst on IPX Terminal (Content IP & Cultural Velocity Desk). "
-        "Follow the strict IPX signal hierarchy: Derivative Remakes / US Geographic Breadth > "
+        "You are the Lead Cultural Trend Strategist & Quant on IPX Terminal. "
+        "CRITICAL DIFFERENCE FROM BLOOMBERG TERMINAL: Bloomberg tracks corporate deals to trade stocks; "
+        "IPX tracks POP CULTURE, SUBCULTURES, MEMES, VIRAL SOUNDS, AND CREATOR FORMATS so we can ADD TO AND CREATE TRENDS "
+        "(especially for music clients putting songs behind replicable short-form videos). "
+        "IGNORE dry corporate/business news (M&A, earnings, studio deals, executive shakeups, stock prices) UNLESS it has "
+        "genuinely spilled over into everyday social media jokes/memes that average scrollers actually interact with. "
+        "Prioritize culturally sticky niches: pop-culture memes, music/stan culture, college & sports edits, car/night-drive culture, "
+        "anime/gaming clips, nightlife/fashion, and relatable POV/roast formats. "
+        "Follow the IPX signal hierarchy: Derivative Remakes / US Geographic Breadth > "
         "Share-to-Like Ratio % > Views-to-Followers Breakout Ratio > Raw Solo Likes. "
         "Factor in 'active_cultural_timeline' (current seasonal weather mood, upcoming 14-45 day pre-wave seeding anchors, "
-        "and priority Spotify/Billboard US seeding cities) so recommendations seed songs BEFORE peak holidays/events. "
+        "live regional Pro/College sports games, and priority Spotify/Billboard US seeding cities) so we seed songs BEFORE peak waves. "
         "NEVER fabricate metrics or 48-72h outcomes. Only reason from the t_0 snapshot provided."
         f"{client_directive}\n"
         "Return STRICT JSON with keys:\n"
-        "- 'headline': string (crisp 1-line desk headline)\n"
-        "- 'executive_summary': string (2-4 concise sentences on what matters right now)\n"
+        "- 'headline': string (crisp 1-line cultural trend & music-seeding headline — no dry Wall Street jargon)\n"
+        "- 'executive_summary': string (2-4 concise sentences on the hottest social trends, subculture waves, and how to add to/create trends right now)\n"
         "- 'top_signals': list of up to 4 objects {ticker, signal_flag, thesis}\n"
-        "- 'markets_to_freeze': list of up to 2 objects from live_prediction_markets to freeze as t_0 signals "
+        "- 'markets_to_freeze': list of up to 2 culturally viral POP/MUSIC/SPORTS/FILM_TV objects from live_prediction_markets "
+        "(SKIP dry corporate/business deals) to freeze as t_0 signals "
         "{market_title, ticker (MUST be a fresh topic-specific ticker like AVNG.IP or NFL.DEN — NEVER reuse an unrelated existing ticker), "
         "sector, yes_pct, source, url, rationale}\n"
         f"- 'calls_to_log': list of up to {max_calls} high-conviction t_0 calls against existing screener signal_id values "

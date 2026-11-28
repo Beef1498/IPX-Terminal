@@ -478,5 +478,65 @@
     "sector": "MUSIC",
     "niche": "corridos_edits",
     "project": "street_mob"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "sidetalknyc",
+    "sector": "POP",
+    "niche": "nyc_street_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "barstoolu",
+    "sector": "SPORTS",
+    "niche": "college_first_movers"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "crunchyroll",
+    "sector": "FILM_TV",
+    "niche": "anime_edit_subculture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "highsnobiety",
+    "sector": "POP",
+    "niche": "streetwear_fashion_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "hypebeast",
+    "sector": "POP",
+    "niche": "streetwear_fashion_culture"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "donutmedia",
+    "sector": "CREATORS",
+    "niche": "car_night_drive_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "ourgenerationmusic",
+    "sector": "MUSIC",
+    "niche": "hiphop_viral_sounds"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "xxl",
+    "sector": "MUSIC",
+    "niche": "hiphop_viral_sounds"
+  },
+  {
+    "platform": "TikTok",
+    "handle": "spotify",
+    "sector": "MUSIC",
+    "niche": "spotify_chart_culture"
+  },
+  {
+    "platform": "Instagram Reels",
+    "handle": "overtime",
+    "sector": "SPORTS",
+    "niche": "youth_sports_edits"
   }
 ]
