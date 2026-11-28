@@ -169,18 +169,42 @@ function renderSwipeCardDeck(containerEl, onAfterAction) {
     : [];
   const cur = queue[0];
   if (!cur) {
+    const totalBriefs = (state.briefs || []).length;
     containerEl.innerHTML = `
       <div class="swipe-deck-wrap" style="text-align:center;padding:24px 12px;border:1px dashed #2e3d52;border-radius:12px">
-        <div style="font-size:24px;margin-bottom:6px">🎉</div>
-        <div style="font-weight:700;color:#f8fafc;margin-bottom:4px">All generated briefs graded!</div>
-        <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">Every swipe + edit note is saved for Gemma 4 DPO fine-tuning.</div>
+        <div style="font-size:24px;margin-bottom:6px">${totalBriefs === 0 ? "⚡" : "🎉"}</div>
+        <div style="font-weight:700;color:#f8fafc;margin-bottom:4px">${totalBriefs === 0 ? "No generated briefs on this server yet" : "All generated briefs graded!"}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">${totalBriefs === 0 ? "Run a quick Morning Quant pass to auto-draft fresh Creative Briefs ready to swipe." : "Every swipe + edit note is saved for Gemma 4 DPO fine-tuning."}</div>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          ${totalBriefs === 0 ? `<button type="button" class="btn-action green" data-swipe-run-quant>⚡ Generate Briefs Now</button>` : ""}
           ${state.swipeSkippedIds.length ? `<button type="button" class="btn-action cyan" data-swipe-reset-skips>Review ${state.swipeSkippedIds.length} Skipped</button>` : ""}
-          ${(state.briefs || []).length ? `<button type="button" class="btn-action" data-swipe-review-all>Re-Swipe All (${state.briefs.length})</button>` : ""}
-          <button type="button" class="btn-action amber" data-swipe-export-dpo>Export DPO Pairs</button>
+          ${totalBriefs > 0 ? `<button type="button" class="btn-action" data-swipe-review-all>Re-Swipe All (${totalBriefs})</button>` : ""}
+          ${totalBriefs > 0 ? `<button type="button" class="btn-action amber" data-swipe-export-dpo>Export DPO Pairs</button>` : ""}
         </div>
       </div>
     `;
+    containerEl.querySelector("[data-swipe-run-quant]")?.addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      btn.textContent = "Generating fresh briefs...";
+      setStatus("Running Morning Quant to generate fresh swipe briefs...");
+      try {
+        const projId = state.activeProjectId && state.activeProjectId !== "NONE" ? state.activeProjectId : null;
+        await api("/api/quant/run", {
+          method: "POST",
+          body: JSON.stringify({ mode: "morning", project_id: projId }),
+        });
+        const data = await api(`/api/bootstrap?sector=${encodeURIComponent(state.sector || "ALL")}`);
+        state.briefs = data.briefs || [];
+        updateBriefAbBadge();
+        setStatus(`Generated fresh briefs! Ready to swipe.`);
+        onAfterAction();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "⚡ Generate Briefs Now";
+        setStatus(`Generate failed: ${err.message}`, true);
+      }
+    });
     containerEl.querySelector("[data-swipe-reset-skips]")?.addEventListener("click", () => {
       state.swipeSkippedIds = [];
       onAfterAction();

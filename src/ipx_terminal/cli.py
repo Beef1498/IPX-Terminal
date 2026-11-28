@@ -153,6 +153,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_qr.add_argument("--model", default=None, help="Override Gemini model (default: gemini-2.5-pro / gemini-3.5-flash-lite).")
     p_qr.add_argument("--max-calls", type=int, default=2, help="Max t_0 calls to log per run (default: 2).")
     p_qr.add_argument("--project", default=None, help="Client project ID for niche priority & song-seeding briefs (e.g. street_mob).")
+    p_qr.add_argument("--remote-url", default=None, help="Trigger Quant run on a remote IPX server (e.g. Railway URL) using IPX_WRITE_TOKEN from .env.")
     p_qr.add_argument("--dry-run", action="store_true", help="Generate memo without writing new signals/calls to SQLite.")
 
     p_proj = sub.add_parser(
@@ -437,6 +438,49 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "quant-run":
+        if args.remote_url:
+            import urllib.request
+            from ipx_terminal.config import PROJECT_ROOT
+
+            token = os.environ.get("IPX_WRITE_TOKEN") or os.environ.get("IPX_Write_Token") or ""
+            if not token:
+                env_file = PROJECT_ROOT / ".env"
+                if env_file.exists():
+                    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+                        line = raw_line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        k, v = line.split("=", 1)
+                        if k.strip().lower() in ("ipx_write_token", "ipx_admin_passcode"):
+                            token = v.strip().strip('"').strip("'")
+                            if token:
+                                break
+            url = f"{args.remote_url.rstrip('/')}/api/quant/run"
+            payload = {
+                "mode": args.mode,
+                "model": args.model,
+                "dry_run": args.dry_run,
+                "max_calls": args.max_calls,
+                "project_id": args.project,
+            }
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["X-IPX-Write-Token"] = token
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            memo = body.get("memo") or {}
+            print(f"[REMOTE: {args.remote_url}] Gemini Quant [{str(memo.get('mode', args.mode)).upper()}] ({memo.get('model_used', '?')}) — {memo.get('headline', '')}")
+            print(memo.get("executive_summary", ""))
+            for act in memo.get("actions_taken") or []:
+                print(f"  + {act}")
+            return 0
+
         from ipx_terminal.quant_agent import run_gemini_quant
 
         memo = run_gemini_quant(
